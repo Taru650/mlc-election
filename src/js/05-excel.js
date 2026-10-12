@@ -220,6 +220,7 @@ function buildProjectWorkbook() {
   addSheet(wb, 'Final_Micro', ['Constituency', 'Booth No', 'Block', 'Order No'], fRows('micro'));
   const status = [['App', 'MLC_POLLING_TOOL'], ['Tool version', APP_VERSION], ['Saved at', nowStamp()]];
   Object.entries(S.locks).forEach(([k, v]) => status.push(['lock.' + k, v ? 'Yes' : 'No']));
+  ['second', 'final'].forEach(stg => PART_KINDS.forEach(k => status.push([`part.${stg}.${k}`, S.parts[stg][k] ? 'Yes' : 'No'])));
   ['second', 'final'].forEach(s => Object.entries(S[s].ran || {}).forEach(([k, v]) => status.push([`ran.${s}.${k}`, v])));
   addSheet(wb, 'Status', ['Key', 'Value'], status, [24, 30]);
   if (S.setup.signature) {
@@ -257,11 +258,14 @@ function parseProjectWorkbook(wb) {
     [['polling', 'Final_Polling', 'partyno'], ['pccp', 'Final_PCCP', 'orderno'], ['micro', 'Final_Micro', 'orderno']].forEach(([k, sh, col]) => {
       sheetObjects(findSheet(wb, sh)).forEach(r => { const id = bKey.get(str(r.constituency).toUpperCase() + '|' + str(r.boothno).replace(/\.0$/, '').toUpperCase()); if (id && str(r[col])) st.final[k][id] = str(r[col]); });
     });
+    let sawParts = false;
     sheetObjects(findSheet(wb, 'Status')).forEach(r => {
       const k = str(r.key), v = r.value;
       if (k.startsWith('lock.') && k.slice(5) in st.locks) st.locks[k.slice(5)] = yes(v);
       const m = k.match(/^ran\.(second|final)\.(\w+)$/); if (m) st[m[1]].ran[m[2]] = str(v);
+      const pm = k.match(/^part\.(second|final)\.(polling|pccp|micro)$/); if (pm) { sawParts = true; st.parts[pm[1]][pm[2]] = yes(v); }
     });
+    if (!sawParts) st.parts = null; // older file: hydrate() derives part locks from the whole-stage locks
     const sig = sheetObjects(findSheet(wb, 'Signature')).sort((a, b) => Number(a.part) - Number(b.part)).map(r => str(r.data)).join('');
     if (sig.startsWith('data:image/')) st.setup.signature = sig;
     st.log = sheetObjects(findSheet(wb, 'Audit_Log')).map(r => ({ time: str(r.time), action: str(r.action) })).filter(l => l.action);
@@ -277,12 +281,18 @@ ACT.openProject = async () => {
   S = hydrate(st); invalidateIndexes();
   const msgs = [];
   const bad = runAudit().filter(c => !c.ok);
-  if (bad.length && (S.locks.second || S.locks.final || S.second.parties.length)) {
-    const badFinal = bad.some(c => c.stage.startsWith('Final'));
-    const badSecond = bad.some(c => !c.stage.startsWith('Final'));
-    if (badSecond) { S.second = { parties: [], pccp: [], micro: [], ran: {} }; S.locks.second = false; }
-    if (badSecond || badFinal) { S.final = { polling: {}, pccp: {}, micro: {}, ran: {} }; S.locks.final = false; }
-    msgs.push(`Randomisation results in the file failed rule verification (${bad.map(c => c.rule).join('; ')}) and were discarded. Please re-run.`);
+  if (bad.length) {
+    // discard only the parts whose results fail verification; the other parts stay as saved
+    const kindOf = stage => PART_KINDS.find(k => stage.endsWith(PART_STAGE_TAG[k]));
+    const dropped = new Set();
+    bad.forEach(c => {
+      const kinds = c.stage === '2nd – All' ? PART_KINDS : [kindOf(c.stage)].filter(Boolean);
+      kinds.forEach(k => {
+        if (c.stage.startsWith('2nd')) { if (k === 'polling') S.second.parties = []; else S.second[k] = []; S.parts.second[k] = false; }
+        S.final[k] = {}; S.parts.final[k] = false; dropped.add(PART_NAME[k]);
+      });
+    });
+    if (dropped.size) msgs.push(`Randomisation results for ${[...dropped].join(', ')} failed rule verification (${bad.map(c => c.rule).join('; ')}) and were discarded. Please re-run those parts.`);
   }
   if (S.locks.officers && validateOfficers().errors.length) { S.locks.officers = false; msgs.push('Officers sheet has errors — Officers unlocked for correction.'); }
   if (S.locks.booths && validateBooths().errors.length) { S.locks.booths = false; msgs.push('Booths sheet has errors — Booths unlocked for correction.'); }

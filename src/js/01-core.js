@@ -67,6 +67,8 @@ function defaultState() {
     second: { parties: [], pccp: [], micro: [], ran: {} },
     final: { polling: {}, pccp: {}, micro: {}, ran: {} },
     locks: { setup: false, training: false, officers: false, letter1: false, booths: false, second: false, final: false },
+    // 2nd and final randomisation are locked part by part, in any order
+    parts: { second: { polling: false, pccp: false, micro: false }, final: { polling: false, pccp: false, micro: false } },
     log: [],
   };
 }
@@ -186,10 +188,26 @@ function normalizeDuty(v) {
   return '';
 }
 
+/* ---------------- per-part locks (2nd and final randomisation) ---------------- */
+const PART_KINDS = ['polling', 'pccp', 'micro'];
+const PART_NAME = { polling: 'Polling parties', pccp: 'PCCP', micro: 'Micro Observers' };
+const PART_STAGE_TAG = { polling: 'Polling', pccp: 'PCCP', micro: 'Micro' };
+/** A part is applicable when something has to be formed for it (booths for parties, required count > 0 for PCCP / MO). */
+function partApplicable(kind) { return kind === 'polling' ? S.booths.length > 0 : singlePlan(kind).length > 0; }
+function partDone(stage, kind) { return !partApplicable(kind) || !!S.parts[stage][kind]; }
+function partsLockedCount(stage) { return PART_KINDS.filter(k => partApplicable(k) && S.parts[stage][k]).length; }
+function partsApplicableCount() { return PART_KINDS.filter(partApplicable).length; }
+/** Whole-stage lock = every applicable part locked. Derived, never set directly. */
+function syncStageLocks() {
+  ['second', 'final'].forEach(stg => { S.locks[stg] = partsApplicableCount() > 0 && PART_KINDS.every(k => partDone(stg, k)); });
+}
+function resetParts(stage) { PART_KINDS.forEach(k => { S.parts[stage][k] = false; }); }
+
 /* ---------------- persistence (browser autosave) ---------------- */
 let _saveTimer = null;
 function persist() {
   invalidateIndexes();
+  syncStageLocks();
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
     S.savedAt = new Date().toISOString();
@@ -215,6 +233,11 @@ function hydrate(st) {
   const out = Object.assign(d, st || {});
   out.setup = Object.assign(defaultSetup(), (st && st.setup) || {});
   out.locks = Object.assign(defaultState().locks, (st && st.locks) || {});
+  out.parts = defaultState().parts;
+  ['second', 'final'].forEach(stg => PART_KINDS.forEach(k => {
+    const saved = st && st.parts && st.parts[stg];
+    out.parts[stg][k] = saved ? !!saved[k] : !!out.locks[stg]; // older files: whole-stage lock = all parts locked
+  }));
   out.second = Object.assign({ parties: [], pccp: [], micro: [], ran: {} }, (st && st.second) || {});
   out.final = Object.assign({ polling: {}, pccp: {}, micro: {}, ran: {} }, (st && st.final) || {});
   const tr = emptyTraining();
@@ -279,7 +302,7 @@ function prereqs(id) {
   if (id === 'booths' && !L.setup) miss.push('Election Setup');
   if (id === 'letter1') { if (!L.officers) miss.push('Officers Database'); if (!L.training) miss.push('Training Schedule'); if (!L.setup) miss.push('Election Setup'); }
   if (id === 'second') { if (!L.setup) miss.push('Election Setup'); if (!L.officers) miss.push('Officers Database'); if (!L.booths) miss.push('Booth Entry'); }
-  if (id === 'final') { if (!L.second) miss.push('2nd Randomisation'); }
+  if (id === 'final') { if (!PART_KINDS.some(k => partApplicable(k) && S.parts.second[k])) miss.push('at least one part of the 2nd Randomisation'); }
   return miss;
 }
 

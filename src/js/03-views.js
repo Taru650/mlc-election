@@ -18,7 +18,8 @@ function renderNav() {
     const locked = m.lock && S.locks[m.lock];
     const miss = prereqs(m.id);
     const cls = ['nav-item', UI.view === m.id ? 'active' : '', locked ? 'done' : '', miss.length ? 'blocked' : ''].join(' ');
-    const tag = locked ? '<span class="tag b-ok">Locked</span>' : (m.lock ? (miss.length ? '<span class="tag">Waiting</span>' : '<span class="tag b-warn">Open</span>') : '');
+    const partial = (m.lock === 'second' || m.lock === 'final') && !locked && partsLockedCount(m.lock) ? `<span class="tag b-warn">${partsLockedCount(m.lock)}/${partsApplicableCount()} locked</span>` : '';
+    const tag = locked ? '<span class="tag b-ok">Locked</span>' : partial || (m.lock ? (miss.length ? '<span class="tag">Waiting</span>' : '<span class="tag b-warn">Open</span>') : '');
     html += `<button class="${cls}" data-act="go" data-arg="${m.id}"><span class="num">${locked ? '✓' : (m.lock ? MODULES.filter(x => x.lock).indexOf(m) + 1 : '•')}</span>${esc(m.label)}${tag}</button>`;
   });
   $('#sideNav').innerHTML = html;
@@ -84,8 +85,8 @@ VIEWS.home = () => {
       ${step('3 · Officers Database', 'officers', 'officers', 'Needs Setup', 'Upload Excel or add manually. Home block, posting block and office are required for the rules.')}
       ${step('4 · Booth Entry', 'booths', 'booths', 'Needs Setup only — independent', 'Polling stations with block and constituency. Can be done at any time before the 2nd randomisation.')}
       ${step('5 · 1st Appointment Letter', 'letter1', 'letter1', 'Needs Officers + Training', 'Duty and training letters. No party / booth disclosed.')}
-      ${step('6 · 2nd Randomisation', 'second', 'second', 'Needs Officers + Booths', 'Forms polling parties (4 different offices), PCCP and Micro Observer pools. Booth not disclosed.')}
-      ${step('7 · Final Randomisation', 'final', 'final', 'Needs 2nd randomisation locked', 'Tags parties / PCCP / MO to booths. Home & posting block of every member is excluded. Untagged = Reserve.')}
+      ${step('6 · 2nd Randomisation', 'second', 'second', 'Needs Officers + Booths', 'Polling parties, PCCP and Micro Observers — three independent parts, each run / re-run / locked separately, in any order. Booth not disclosed.')}
+      ${step('7 · Final Randomisation', 'final', 'final', 'Each part needs the same part locked in the 2nd round', 'Tags parties / PCCP / MO to booths. Home & posting block of every member is excluded. Untagged = Reserve.')}
     </div>
   </div>
   <div class="card"><div class="card-head"><h3>Rule check (live)</h3></div>${auditHtml(runAudit())}</div>`;
@@ -417,52 +418,58 @@ ACT.previewLetter1One = pin => {
 /* =====================================================================
  * 2ND RANDOMISATION
  * ===================================================================== */
+function partStatusChips(stage) {
+  return PART_KINDS.map(k => {
+    if (!partApplicable(k)) return `<span class="badge">${PART_NAME[k]}: not required</span>`;
+    return S.parts[stage][k] ? `<span class="badge b-ok">🔒 ${PART_NAME[k]}</span>` : `<span class="badge b-warn">${PART_NAME[k]}: open</span>`;
+  }).join(' ');
+}
+/** Lock / unlock bar for one part of a stage. */
+function partLockBar(stage, kind, canLock) {
+  if (S.parts[stage][kind]) return `<span class="badge b-ok">🔒 ${PART_NAME[kind]} locked</span><button class="btn sm" data-act="unlockPart" data-arg="${stage}:${kind}">Unlock ${PART_NAME[kind]}</button>`;
+  return `<button class="btn ok" data-act="lockPart" data-arg="${stage}:${kind}" ${canLock ? '' : 'disabled'}>Verify &amp; Lock ${PART_NAME[kind]}</button>`;
+}
 VIEWS.second = () => {
-  const ready = !prereqs('second').length, locked = S.locks.second;
+  const ready = !prereqs('second').length;
   const sub = UI.sub.second || 'polling';
   const plan = pollingPlan(), pp = singlePlan('pccp'), mp = singlePlan('micro');
-  const probs = ready ? pollingFeasibility() : [];
-  const sp = ready ? singleFeasibility('pccp') : [], sm = ready ? singleFeasibility('micro') : [];
   const ran = S.second.ran || {};
-  const canRun = ready && !locked;
   let body = '';
-  if (sub === 'polling') {
-    body = `<div class="btn-row" style="margin-bottom:10px">
-      <button class="btn warn" data-act="runSecond" data-arg="polling" ${canRun ? '' : 'disabled'}>${S.second.parties.length ? 'Re-run' : 'Run'} polling party randomisation</button>
-      <button class="btn" data-act="previewSecond" data-arg="polling" ${S.second.parties.length && locked ? '' : 'disabled'}>2nd letters (parties)</button>
-      <button class="btn" data-act="exportSecond" ${S.second.parties.length ? '' : 'disabled'}>Export Excel</button>
-      ${ran.polling ? `<span class="small muted">Last run: ${esc(ran.polling)}</span>` : ''}</div>
-      ${probs.length ? `<div class="alert bad"><b>Cannot form parties yet:</b><ul>${probs.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
-      <div class="tbl-wrap"><table class="t"><thead><tr><th>Party no</th><th>Const.</th><th>Presiding Officer</th><th>Polling Officer-1</th><th>Polling Officer-2</th><th>Polling Officer-3</th></tr></thead><tbody>
-      ${S.second.parties.length ? S.second.parties.map(p => `<tr><td><b>${esc(p.partyNo)}</b></td><td>${esc(p.const)}</td>${PARTY_ROLES.map(r => memberCell(p[r])).join('')}</tr>`).join('') : '<tr><td colspan="6" class="center muted" style="padding:20px">Not run yet.</td></tr>'}
-      </tbody></table></div>`;
-  } else {
-    const kind = sub, list = kind === 'pccp' ? S.second.pccp : S.second.micro, plan2 = kind === 'pccp' ? pp : mp, pr = kind === 'pccp' ? sp : sm;
-    const nm = kind === 'pccp' ? 'PCCP (Patrolling Magistrate)' : 'Micro Observer';
-    body = !plan2.length ? `<div class="alert info">${nm}: required count is 0 for every constituency (see Setup) — nothing to randomise.</div>` : `
-      <div class="btn-row" style="margin-bottom:10px">
+  if (sub === 'polling' || sub === 'pccp' || sub === 'micro') {
+    const kind = sub, locked = S.parts.second[kind], canRun = ready && !locked;
+    const list = kind === 'polling' ? S.second.parties : S.second[kind];
+    const probs = !ready || locked ? [] : kind === 'polling' ? pollingFeasibility() : singleFeasibility(kind);
+    const nm = kind === 'polling' ? 'polling party' : kind === 'pccp' ? 'PCCP (Patrolling Magistrate)' : 'Micro Observer';
+    const bad = runAudit().filter(c => (c.stage === '2nd – ' + PART_STAGE_TAG[kind] || c.stage === '2nd – All') && !c.ok);
+    const bar = `<div class="btn-row" style="margin-bottom:10px">
       <button class="btn warn" data-act="runSecond" data-arg="${kind}" ${canRun ? '' : 'disabled'}>${list.length ? 'Re-run' : 'Run'} ${nm} randomisation</button>
-      <button class="btn" data-act="previewSecond" data-arg="${kind}" ${list.length && locked ? '' : 'disabled'}>2nd letters</button>
+      <button class="btn" data-act="previewSecond" data-arg="${kind}" ${list.length && locked ? '' : 'disabled'} title="Available after this part is locked">2nd letters</button>
       <button class="btn" data-act="exportSecond" ${list.length ? '' : 'disabled'}>Export Excel</button>
-      ${ran[kind] ? `<span class="small muted">Last run: ${esc(ran[kind])}</span>` : ''}</div>
-      ${pr.length ? `<div class="alert bad"><ul>${pr.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}
-      <div class="tbl-wrap"><table class="t"><thead><tr><th>Order no</th><th>Const.</th><th>PIN</th><th>Name</th><th>Designation / office</th><th>Home block</th><th>Posting block</th></tr></thead><tbody>
+      ${ran[kind] ? `<span class="small muted">Last run: ${esc(ran[kind])}</span>` : ''}
+      <span class="spacer"></span>${partLockBar('second', kind, ready && list.length && !bad.length)}</div>
+      ${list.length && !locked ? `<div class="alert ${bad.length ? 'bad' : 'info'}">${bad.length ? `<b>${bad.length} rule check(s) failed</b> — re-run before locking.` : `Not locked yet — you may re-run as many times as needed, then <b>Verify &amp; Lock ${PART_NAME[kind]}</b>. The other parts are independent.`}</div>` : ''}
+      ${probs.length ? `<div class="alert bad"><b>Cannot run yet:</b><ul>${probs.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}`;
+    if (kind !== 'polling' && !partApplicable(kind)) body = `<div class="alert info">${nm}: required count is 0 for every constituency (see Setup) — nothing to randomise, nothing to lock.</div>`;
+    else if (kind === 'polling') body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Party no</th><th>Const.</th><th>Presiding Officer</th><th>Polling Officer-1</th><th>Polling Officer-2</th><th>Polling Officer-3</th></tr></thead><tbody>
+      ${list.length ? list.map(p => `<tr><td><b>${esc(p.partyNo)}</b></td><td>${esc(p.const)}</td>${PARTY_ROLES.map(r => memberCell(p[r])).join('')}</tr>`).join('') : '<tr><td colspan="6" class="center muted" style="padding:20px">Not run yet.</td></tr>'}
+      </tbody></table></div>`;
+    else body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Order no</th><th>Const.</th><th>PIN</th><th>Name</th><th>Designation / office</th><th>Home block</th><th>Posting block</th></tr></thead><tbody>
       ${list.length ? list.map(x => { const o = officerByPin(x.pin) || {}; return `<tr><td><b>${esc(x.orderNo)}</b></td><td>${esc(x.const)}</td><td class="pin">${esc(x.pin)}</td><td>${esc(o.name)}</td><td>${esc(o.designation)}, ${esc(o.office)}</td><td>${esc(o.homeBlock)}</td><td>${esc(o.postingBlock)}</td></tr>`; }).join('') : '<tr><td colspan="7" class="center muted" style="padding:20px">Not run yet.</td></tr>'}
       </tbody></table></div>`;
-  }
+  } else body = auditHtml(runAudit(), ['2nd']);
+  const tabLabel = (k, n) => `${PART_NAME[k]} (${n})${S.parts.second[k] ? ' 🔒' : ''}`;
   return `
   <div class="card">
-    <div class="card-head"><h2>2nd Randomisation — party formation</h2><span class="spacer"></span>
-      ${locked ? '<span class="badge b-ok">🔒 Locked</span><button class="btn sm" data-act="unlock" data-arg="second">Unlock</button>' : `<button class="btn ok" data-act="lock" data-arg="second" ${ready ? '' : 'disabled'}>Verify &amp; Lock 2nd randomisation</button>`}</div>
-    <p class="small muted">Forms polling parties of 4 (PrO, P1, P2, P3) from <b>4 different offices</b>, and selects PCCP and Micro Observers. Every main party is formed so that at least one booth exists where none of its members has a home or posting block — so the final randomisation is always possible. Booths are <b>not</b> disclosed in the 2nd letter. Re-running is allowed until locked.</p>
+    <div class="card-head"><h2>2nd Randomisation — party formation</h2><span class="spacer"></span>${partStatusChips('second')}</div>
+    <p class="small muted">Three <b>independent</b> parts — Polling parties, PCCP and Micro Observers. Do them in <b>any order</b>: run and re-run a part as often as needed, then lock that part. Locking one part does not lock or change the others. Polling parties are 4 members (PrO, P1, P2, P3) from <b>4 different offices</b>; every main party/officer is formed against a booth where nobody's home or posting block applies, so the final randomisation is always possible. Booths are <b>not</b> disclosed in the 2nd letter.</p>
     <div class="tbl-wrap" style="max-height:none"><table class="t"><thead><tr><th>Constituency</th><th>Booths</th><th>Parties to form</th><th>PCCP required → with reserve</th><th>MO required → with reserve</th></tr></thead><tbody>
     ${S.constituencies.map(c => { const n = boothsOf(c.code).length; return `<tr><td><b>${esc(c.code)}</b> ${esc(c.name)}</td><td>${n}</td><td>${n ? reserveTarget(n) : 0}</td><td>${intOr0(c.pccp)} → ${reserveTarget(intOr0(c.pccp))}</td><td>${intOr0(c.micro)} → ${reserveTarget(intOr0(c.micro))}</td></tr>`; }).join('')}
     <tr><td><b>Total</b></td><td>${S.booths.length}</td><td>${plan.reduce((a, p) => a + p.target, 0)}</td><td>${pp.reduce((a, p) => a + p.target, 0)}</td><td>${mp.reduce((a, p) => a + p.target, 0)}</td></tr>
     </tbody></table></div>
   </div>
   <div class="card">
-    <div class="subtabs">${[['polling', `Polling parties (${S.second.parties.length})`], ['pccp', `PCCP (${S.second.pccp.length})`], ['micro', `Micro Observers (${S.second.micro.length})`], ['audit', 'Rule verification']].map(([k, l]) => `<button class="${sub === k ? 'active' : ''}" data-act="sub" data-arg="second:${k}">${esc(l)}</button>`).join('')}</div>
-    ${sub === 'audit' ? auditHtml(runAudit(), ['2nd']) : body}
+    <div class="subtabs">${[['polling', tabLabel('polling', S.second.parties.length)], ['pccp', tabLabel('pccp', S.second.pccp.length)], ['micro', tabLabel('micro', S.second.micro.length)], ['audit', 'Rule verification']].map(([k, l]) => `<button class="${sub === k ? 'active' : ''}" data-act="sub" data-arg="second:${k}">${esc(l)}</button>`).join('')}</div>
+    ${body}
   </div>`;
 };
 function memberCell(pin) {
@@ -472,84 +479,131 @@ function memberCell(pin) {
 }
 ACT.sub = arg => { const [v, s] = arg.split(':'); UI.sub[v] = s; render(); };
 ACT.runSecond = kind => {
-  if (S.locks.second) return;
-  const label = kind === 'polling' ? 'polling parties' : kind === 'pccp' ? 'PCCP' : 'Micro Observers';
+  if (S.parts.second[kind]) return toast(`${PART_NAME[kind]} is locked. Unlock it to re-run.`, 'bad');
+  const label = PART_NAME[kind];
   const existing = kind === 'polling' ? S.second.parties.length : S.second[kind].length;
-  if (existing && !confirmBox(`Re-run will discard the current ${label} and form a new random set. Continue?`)) return;
+  if (existing && !confirmBox(`Re-run will discard the current ${label} and form a new random set. Other parts are not affected. Continue?`)) return;
   const pool = kind === 'polling' ? S.officers.filter(o => PARTY_ROLES.some(r => o.duty === DUTY_BY_KEY[r].label)) : officersOfDuty(kind === 'pccp' ? 'PM' : 'MO');
   shuffleAnimation(`Forming ${label}`, pool, () => {
     if (kind === 'polling') { const r = formPollingParties(); S.second.parties = r.parties; addLog(`2nd randomisation: ${r.parties.length} polling parties formed (attempt ${r.attempts})`); }
     else { const r = formSingles(kind); S.second[kind] = r.items; addLog(`2nd randomisation: ${r.items.length} ${label} selected`); }
     S.second.ran[kind] = nowStamp();
-    S.final = { polling: {}, pccp: {}, micro: {}, ran: {} };
+    S.final[kind] = {}; delete S.final.ran[kind]; // only this part's (unlocked) booth tagging depends on it
     persist(); render();
-    const bad = runAudit().filter(c => c.stage.startsWith('2nd') && !c.ok);
-    toast(bad.length ? `Formed, but ${bad.length} rule check(s) failed — see Rule verification.` : `${label} formed. All rule checks passed.`, bad.length ? 'bad' : 'ok');
+    const bad = runAudit().filter(c => (c.stage === '2nd – ' + PART_STAGE_TAG[kind] || c.stage === '2nd – All') && !c.ok);
+    toast(bad.length ? `Formed, but ${bad.length} rule check(s) failed — see Rule verification.` : `${label} formed. All rule checks passed. Re-run or lock this part.`, bad.length ? 'bad' : 'ok');
   });
 };
 ACT.previewSecond = kind => {
+  if (!S.parts.second[kind]) return toast(`Lock ${PART_NAME[kind]} first — 2nd letters are issued only from a locked randomisation.`, 'bad');
   if (kind === 'polling') openDoc(`2nd Appointment Letters — Polling Parties (${S.second.parties.length})`, S.second.parties.map(secondPartyLetterHtml).join(''));
   else { const list = S.second[kind]; openDoc(`2nd Appointment Letters — ${kind === 'pccp' ? 'PCCP' : 'Micro Observer'} (${list.length})`, list.map(x => secondSingleLetterHtml(x, kind)).join('')); }
 };
 
 /* =====================================================================
- * FINAL RANDOMISATION
+ * FINAL RANDOMISATION (also part by part, any order)
  * ===================================================================== */
+function finalPartComplete(kind) {
+  const n = Object.keys(S.final[kind]).length;
+  if (kind === 'polling') return S.booths.length > 0 && n === S.booths.length;
+  return n === singlePlan(kind).reduce((a, p) => a + p.required, 0);
+}
 VIEWS.final = () => {
-  const ready = !prereqs('final').length, locked = S.locks.final;
   const sub = UI.sub.final || 'polling';
   const F = S.final, ran = F.ran || {};
-  const canRun = ready && !locked;
   const hasP = Object.keys(F.polling).length, hasC = Object.keys(F.pccp).length, hasM = Object.keys(F.micro).length;
   let body = '';
-  if (sub === 'polling') {
-    const reserve = S.second.parties.filter(p => !Object.values(F.polling).includes(p.partyNo));
-    body = `<div class="btn-row" style="margin-bottom:10px"><button class="btn bad" data-act="runFinal" data-arg="polling" ${canRun ? '' : 'disabled'}>${hasP ? 'Re-run' : 'Run'} polling party → booth tagging</button>${ran.polling ? `<span class="small muted">Last run: ${esc(ran.polling)}</span>` : ''}</div>
-    <div class="tbl-wrap"><table class="t"><thead><tr><th>Const.</th><th>Booth</th><th>Block</th><th>Location</th><th>Party</th><th>PrO</th><th>P1</th><th>P2</th><th>P3</th></tr></thead><tbody>
-    ${S.booths.map(b => { const p = S.second.parties.find(x => x.partyNo === F.polling[b.id]); return `<tr><td>${esc(b.const)}</td><td class="pin">${esc(boothLabel(b))}</td><td><b>${esc(b.block)}</b></td><td>${esc(b.name)}</td><td><b>${p ? esc(p.partyNo) : '—'}</b></td>${p ? PARTY_ROLES.map(r => memberCell(p[r])).join('') : '<td colspan="4" class="muted">not tagged</td>'}</tr>`; }).join('')}
-    </tbody></table></div>
-    ${hasP ? `<h4 style="margin-top:14px">Reserve polling parties (${reserve.length})</h4><p class="small">${reserve.map(p => `<span class="badge b-warn">${esc(p.partyNo)}</span>`).join(' ') || '—'}</p>` : ''}`;
-  } else if (sub === 'pccp' || sub === 'micro') {
-    const kind = sub, tags = F[kind], list = S.second[kind], plan = singlePlan(kind), has = Object.keys(tags).length;
-    const nm = kind === 'pccp' ? 'PCCP' : 'Micro Observer';
-    const reserve = list.filter(x => !Object.values(tags).includes(x.orderNo));
-    body = !plan.length ? `<div class="alert info">${nm} not required (0 in Setup).</div>` : `<div class="btn-row" style="margin-bottom:10px"><button class="btn bad" data-act="runFinal" data-arg="${kind}" ${canRun ? '' : 'disabled'}>${has ? 'Re-run' : 'Run'} ${nm} → booth tagging</button>${ran[kind] ? `<span class="small muted">Last run: ${esc(ran[kind])}</span>` : ''}</div>
-    <div class="tbl-wrap"><table class="t"><thead><tr><th>Const.</th><th>Booth</th><th>Block</th><th>Location</th><th>Order no</th><th>Officer</th></tr></thead><tbody>
-    ${S.booths.filter(b => plan.some(p => p.code === b.const)).map(b => { const x = list.find(i => i.orderNo === tags[b.id]); return `<tr><td>${esc(b.const)}</td><td class="pin">${esc(boothLabel(b))}</td><td><b>${esc(b.block)}</b></td><td>${esc(b.name)}</td><td>${x ? `<b>${esc(x.orderNo)}</b>` : '—'}</td>${x ? memberCell(x.pin) : '<td class="muted">not tagged</td>'}</tr>`; }).join('')}
-    </tbody></table></div>
-    ${has ? `<h4 style="margin-top:14px">Reserve ${nm} (${reserve.length})</h4><p class="small">${reserve.map(x => `<span class="badge b-warn">${esc(x.orderNo)}</span>`).join(' ') || '—'}</p>` : ''}`;
+  if (sub === 'polling' || sub === 'pccp' || sub === 'micro') {
+    const kind = sub, locked = S.parts.final[kind], secLocked = S.parts.second[kind];
+    const nm = kind === 'polling' ? 'polling party' : kind === 'pccp' ? 'PCCP' : 'Micro Observer';
+    const tags = F[kind], has = Object.keys(tags).length;
+    const bad = runAudit().filter(c => c.stage === 'Final – ' + PART_STAGE_TAG[kind] && !c.ok);
+    const bar = `<div class="btn-row" style="margin-bottom:10px">
+      <button class="btn bad" data-act="runFinal" data-arg="${kind}" ${secLocked && !locked ? '' : 'disabled'}>${has ? 'Re-run' : 'Run'} ${nm} → booth tagging</button>
+      <button class="btn" data-act="finalLetters" data-arg="${kind}" ${locked ? '' : 'disabled'} title="Available after this part is locked">Final letters</button>
+      ${ran[kind] ? `<span class="small muted">Last run: ${esc(ran[kind])}</span>` : ''}
+      <span class="spacer"></span>${partLockBar('final', kind, secLocked && finalPartComplete(kind) && !bad.length)}</div>
+      ${!secLocked ? `<div class="alert warn">Lock <b>${PART_NAME[kind]}</b> in the 2nd randomisation first. The other parts can be tagged meanwhile.</div>` : ''}
+      ${has && !locked ? `<div class="alert ${bad.length ? 'bad' : 'info'}">${bad.length ? `<b>${bad.length} rule check(s) failed</b> — re-run before locking.` : `Not locked yet — re-run as many times as needed, then <b>Verify &amp; Lock ${PART_NAME[kind]}</b>.`}</div>` : ''}`;
+    if (kind === 'polling') {
+      const reserve = S.second.parties.filter(p => !Object.values(tags).includes(p.partyNo));
+      body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Const.</th><th>Booth</th><th>Block</th><th>Location</th><th>Party</th><th>PrO</th><th>P1</th><th>P2</th><th>P3</th></tr></thead><tbody>
+      ${S.booths.map(b => { const p = S.second.parties.find(x => x.partyNo === tags[b.id]); return `<tr><td>${esc(b.const)}</td><td class="pin">${esc(boothLabel(b))}</td><td><b>${esc(b.block)}</b></td><td>${esc(b.name)}</td><td><b>${p ? esc(p.partyNo) : '—'}</b></td>${p ? PARTY_ROLES.map(r => memberCell(p[r])).join('') : '<td colspan="4" class="muted">not tagged</td>'}</tr>`; }).join('')}
+      </tbody></table></div>
+      ${has ? `<h4 style="margin-top:14px">Reserve polling parties (${reserve.length})</h4><p class="small">${reserve.map(p => `<span class="badge b-warn">${esc(p.partyNo)}</span>`).join(' ') || '—'}</p>` : ''}`;
+    } else if (!partApplicable(kind)) body = `<div class="alert info">${PART_NAME[kind]} not required (0 in Setup).</div>`;
+    else {
+      const list = S.second[kind], plan = singlePlan(kind);
+      const reserve = list.filter(x => !Object.values(tags).includes(x.orderNo));
+      body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Const.</th><th>Booth</th><th>Block</th><th>Location</th><th>Order no</th><th>Officer</th></tr></thead><tbody>
+      ${S.booths.filter(b => plan.some(p => p.code === b.const)).map(b => { const x = list.find(i => i.orderNo === tags[b.id]); return `<tr><td>${esc(b.const)}</td><td class="pin">${esc(boothLabel(b))}</td><td><b>${esc(b.block)}</b></td><td>${esc(b.name)}</td><td>${x ? `<b>${esc(x.orderNo)}</b>` : '—'}</td>${x ? memberCell(x.pin) : '<td class="muted">not tagged</td>'}</tr>`; }).join('')}
+      </tbody></table></div>
+      ${has ? `<h4 style="margin-top:14px">Reserve ${PART_NAME[kind]} (${reserve.length})</h4><p class="small">${reserve.map(x => `<span class="badge b-warn">${esc(x.orderNo)}</span>`).join(' ') || '—'}</p>` : ''}`;
+    }
   } else body = auditHtml(runAudit(), ['Final']);
+  const tabLabel = (k, n) => `${PART_NAME[k]} (${n})${S.parts.final[k] ? ' 🔒' : ''}`;
   return `
   <div class="card">
-    <div class="card-head"><h2>Final Randomisation — booth tagging</h2><span class="spacer"></span>
-    ${locked ? '<span class="badge b-ok">🔒 Locked</span><button class="btn sm" data-act="unlock" data-arg="final">Unlock</button>' : `<button class="btn ok" data-act="lock" data-arg="final" ${ready ? '' : 'disabled'}>Verify &amp; Lock final randomisation</button>`}</div>
-    <p class="small muted">Randomly tags formed parties / PCCP / Micro Observers to booths of their constituency. A party is tagged to a booth only if <b>none of its 4 members</b> has that booth's block as home block or posting block (same for PCCP and MO). Untagged = Reserve. Re-running is allowed until locked.</p>
-    <div class="btn-row"><button class="btn bad" data-act="runFinal" data-arg="all" ${canRun ? '' : 'disabled'}>Run all three taggings</button>
-      <button class="btn" data-act="go" data-arg="reports">Final letters &amp; reports →</button></div>
+    <div class="card-head"><h2>Final Randomisation — booth tagging</h2><span class="spacer"></span>${partStatusChips('final')}</div>
+    <p class="small muted">Each part is tagged and locked <b>independently, in any order</b>, as soon as the same part is locked in the 2nd randomisation. A party is tagged to a booth only if <b>none of its 4 members</b> has that booth's block as home block or posting block (same rule for PCCP and Micro Observers). Untagged = Reserve.</p>
+    <div class="btn-row"><button class="btn" data-act="go" data-arg="reports">Final letters &amp; reports →</button></div>
   </div>
   <div class="card">
-    <div class="subtabs">${[['polling', `Polling parties (${hasP}/${S.booths.length})`], ['pccp', `PCCP (${hasC})`], ['micro', `Micro Observers (${hasM})`], ['audit', 'Rule verification']].map(([k, l]) => `<button class="${sub === k ? 'active' : ''}" data-act="sub" data-arg="final:${k}">${esc(l)}</button>`).join('')}</div>
+    <div class="subtabs">${[['polling', tabLabel('polling', `${hasP}/${S.booths.length}`)], ['pccp', tabLabel('pccp', hasC)], ['micro', tabLabel('micro', hasM)], ['audit', 'Rule verification']].map(([k, l]) => `<button class="${sub === k ? 'active' : ''}" data-act="sub" data-arg="final:${k}">${esc(l)}</button>`).join('')}</div>
     ${body}
   </div>`;
 };
 ACT.runFinal = kind => {
-  if (S.locks.final) return;
-  const kinds = kind === 'all' ? ['polling', 'pccp', 'micro'] : [kind];
-  const any = kinds.some(k => Object.keys(S.final[k]).length);
-  if (any && !confirmBox('Re-run will replace the current booth tagging with a new random tagging. Continue?')) return;
-  const pool = S.second.parties.map(p => officerByPin(p.PRO)).filter(Boolean);
-  shuffleAnimation('Tagging to booths', pool, () => {
-    kinds.forEach(k => {
-      if (k === 'polling') { if (S.second.parties.length) S.final.polling = finalPolling(); }
-      else if (singlePlan(k).length) S.final[k] = finalSingles(k);
-      else S.final[k] = {};
-      S.final.ran[k] = nowStamp();
-    });
-    addLog(`Final randomisation run: ${kinds.join(', ')}`);
+  if (!S.parts.second[kind]) return toast(`Lock ${PART_NAME[kind]} in the 2nd randomisation first.`, 'bad');
+  if (S.parts.final[kind]) return toast(`${PART_NAME[kind]} booth tagging is locked. Unlock it to re-run.`, 'bad');
+  if (Object.keys(S.final[kind]).length && !confirmBox(`Re-run will replace the current ${PART_NAME[kind]} booth tagging with a new random tagging. Continue?`)) return;
+  const pool = kind === 'polling' ? S.second.parties.map(p => officerByPin(p.PRO)).filter(Boolean) : S.second[kind].map(x => officerByPin(x.pin)).filter(Boolean);
+  shuffleAnimation(`Tagging ${PART_NAME[kind]} to booths`, pool, () => {
+    S.final[kind] = kind === 'polling' ? finalPolling() : finalSingles(kind);
+    S.final.ran[kind] = nowStamp();
+    addLog(`Final randomisation run: ${PART_NAME[kind]}`);
     persist(); render();
-    const bad = runAudit().filter(c => c.stage.startsWith('Final') && !c.ok);
-    toast(bad.length ? `Tagged, but ${bad.length} rule check(s) failed.` : 'Booth tagging done. All rule checks passed.', bad.length ? 'bad' : 'ok');
+    const bad = runAudit().filter(c => c.stage === 'Final – ' + PART_STAGE_TAG[kind] && !c.ok);
+    toast(bad.length ? `Tagged, but ${bad.length} rule check(s) failed.` : `${PART_NAME[kind]} tagged to booths. All rule checks passed. Re-run or lock this part.`, bad.length ? 'bad' : 'ok');
   });
+};
+
+/* ---------------- per-part lock / unlock ---------------- */
+ACT.lockPart = arg => {
+  const [stage, kind] = arg.split(':');
+  const e = [];
+  if (!partApplicable(kind)) return toast(`${PART_NAME[kind]} is not required.`, 'warn');
+  if (stage === 'second') {
+    if (prereqs('second').length) return toast('Prerequisite pending: ' + prereqs('second').join(', '), 'bad');
+    const n = kind === 'polling' ? S.second.parties.length : S.second[kind].length;
+    if (!n) e.push(`Run the ${PART_NAME[kind]} randomisation first.`);
+    runAudit().filter(c => (c.stage === '2nd – ' + PART_STAGE_TAG[kind] || c.stage === '2nd – All') && !c.ok).forEach(c => e.push(`Rule check failed: ${c.stage} — ${c.rule}`));
+  } else {
+    if (!S.parts.second[kind]) e.push(`Lock ${PART_NAME[kind]} in the 2nd randomisation first.`);
+    if (!finalPartComplete(kind)) e.push(`Run the ${PART_NAME[kind]} booth tagging first.`);
+    runAudit().filter(c => c.stage === 'Final – ' + PART_STAGE_TAG[kind] && !c.ok).forEach(c => e.push(`Rule check failed: ${c.stage} — ${c.rule}`));
+  }
+  if (e.length) return showErrors(`Cannot lock ${PART_NAME[kind]}`, e);
+  S.parts[stage][kind] = true;
+  addLog(`Locked: ${stage === 'second' ? '2nd' : 'final'} randomisation — ${PART_NAME[kind]}`);
+  persist(); render();
+  toast(`${PART_NAME[kind]} locked (${stage === 'second' ? '2nd' : 'final'} randomisation). ${partsLockedCount(stage)} of ${partsApplicableCount()} parts locked.`, 'ok');
+};
+ACT.unlockPart = arg => {
+  const [stage, kind] = arg.split(':');
+  if (stage === 'second') {
+    if (S.parts.final[kind]) return toast(`Unlock ${PART_NAME[kind]} in the final randomisation first.`, 'bad');
+    if (Object.keys(S.final[kind]).length) {
+      if (!confirmBox(`Unlocking ${PART_NAME[kind]} will DELETE its final booth tagging. Other parts are not affected. Continue?`)) return;
+      S.final[kind] = {}; delete S.final.ran[kind];
+    }
+  } else {
+    const t = window.prompt(`${PART_NAME[kind]} final tagging may already have been used for final letters.\nType UNLOCK to unlock it (recorded in the audit log).`);
+    if (t !== 'UNLOCK') return;
+  }
+  S.parts[stage][kind] = false;
+  addLog(`Unlocked: ${stage === 'second' ? '2nd' : 'final'} randomisation — ${PART_NAME[kind]}`);
+  persist(); render();
 };
 
 /* ---------------- shuffle animation ---------------- */
@@ -587,29 +641,17 @@ ACT.lock = mod => {
   if (mod === 'training') v = validateTraining();
   if (mod === 'officers') v = validateOfficers();
   if (mod === 'booths') v = validateBooths();
-  if (mod === 'second') {
-    const e = [];
-    if (!S.second.parties.length) e.push('Run the polling party randomisation.');
-    if (singlePlan('pccp').length && !S.second.pccp.length) e.push('Run the PCCP randomisation.');
-    if (singlePlan('micro').length && !S.second.micro.length) e.push('Run the Micro Observer randomisation.');
-    runAudit().filter(c => c.stage.startsWith('2nd') && !c.ok).forEach(c => e.push(`Rule check failed: ${c.stage} — ${c.rule}`));
-    v = { errors: e, warnings: [] };
-  }
-  if (mod === 'final') {
-    const e = [];
-    if (Object.keys(S.final.polling).length !== S.booths.length) e.push('Tag polling parties to all booths.');
-    if (singlePlan('pccp').length && !Object.keys(S.final.pccp).length) e.push('Run PCCP booth tagging.');
-    if (singlePlan('micro').length && !Object.keys(S.final.micro).length) e.push('Run Micro Observer booth tagging.');
-    runAudit().filter(c => !c.ok).forEach(c => e.push(`Rule check failed: ${c.stage} — ${c.rule}`));
-    v = { errors: e, warnings: [] };
+  if (mod === 'second' || mod === 'final') {
+    PART_KINDS.filter(k => partApplicable(k) && !S.parts[mod][k]).forEach(k => ACT.lockPart(`${mod}:${k}`));
+    return;
   }
   if (v.errors.length) return showErrors(`Cannot lock — ${v.errors.length} problem(s)`, v.errors);
   if (v.warnings.length && !confirmBox(`${v.warnings.length} warning(s) found (e.g. ${v.warnings[0]}). Lock anyway?`)) return;
   if (mod === 'officers') S.officers.forEach(o => { if (!str(o.pin)) o.pin = nextPin(); });
-  if (mod === 'setup' && (S.second.parties.length || S.locks.second)) {
+  if (mod === 'setup' && (S.second.parties.length || S.second.pccp.length || S.second.micro.length)) {
     const bad = runAudit().filter(c => !c.ok);
     if (bad.length) {
-      S.locks.second = false; S.locks.final = false;
+      resetParts('second'); resetParts('final');
       toast('Setup change makes the existing randomisation inconsistent (e.g. reserve % or required counts). 2nd and final randomisation were unlocked — please re-run them.', 'warn');
     }
   }
@@ -621,18 +663,12 @@ ACT.lock = mod => {
 ACT.unlock = mod => {
   const hasSecond = S.second.parties.length || S.second.pccp.length || S.second.micro.length;
   const hasFinal = Object.keys(S.final.polling).length || Object.keys(S.final.pccp).length || Object.keys(S.final.micro).length;
-  if (mod === 'final') {
-    const t = window.prompt('Final randomisation may already have been used for final letters.\nType UNLOCK to unlock it (the action is recorded in the audit log).');
-    if (t !== 'UNLOCK') return;
-  } else if ((mod === 'officers' || mod === 'booths') && (hasSecond || hasFinal)) {
-    if (!confirmBox(`Unlocking ${mod} will DELETE the 2nd and final randomisation results (they depend on this data). Continue?`)) return;
+  if (mod === 'second' || mod === 'final') return toast('Unlock individual parts on the randomisation page.', 'warn');
+  if ((mod === 'officers' || mod === 'booths') && (hasSecond || hasFinal)) {
+    if (!confirmBox(`Unlocking ${mod} will DELETE all 2nd and final randomisation results (they depend on this data). Continue?`)) return;
     S.second = { parties: [], pccp: [], micro: [], ran: {} };
     S.final = { polling: {}, pccp: {}, micro: {}, ran: {} };
-    S.locks.second = false; S.locks.final = false;
-  } else if (mod === 'second') {
-    if (S.locks.final) return toast('Unlock the final randomisation first.', 'bad');
-    if (hasFinal && !confirmBox('Unlocking the 2nd randomisation will DELETE the final booth tagging. Continue?')) return;
-    S.final = { polling: {}, pccp: {}, micro: {}, ran: {} };
+    resetParts('second'); resetParts('final');
   } else if (mod === 'training') {
     S.locks.letter1 = false;
   } else if (mod === 'setup' && hasSecond) {

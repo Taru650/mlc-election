@@ -12,8 +12,10 @@ constituencies are offered as suggestions only).
 
 1. Copy `MLC_Polling_Personnel_Tool.html` to the computer and double-click it.
 2. **Rehearse with test data:** *Save / Load / Test Data → Small — Load into tool*.
-   Lock Setup → Training → Officers → Booths, run the 2nd randomisation (3 tabs),
-   lock it, run the final randomisation, lock it, then print from *Reports & Letters*.
+   Lock Setup → Training → Officers → Booths. In the 2nd randomisation, open any tab
+   (Polling parties / PCCP / Micro Observers), run and re-run it as often as wanted, then lock
+   that tab; do the other tabs in any order. Do the same in the final randomisation, then
+   print from *Reports & Letters* (each letter set opens as soon as its own part is locked).
 3. **Live data:** *Dashboard → Start a new, empty project*, then enter or import your data.
 4. **Save Project (.xlsx)** regularly. That one Excel file holds everything and can be
    opened on another computer with **Open Project (.xlsx)**.
@@ -30,8 +32,8 @@ computer. The project Excel file is the real backup.
 | Officers Database | Setup | Excel import (replace/append) or manual add/edit |
 | **Booth Entry** | **Setup only** | **Independent** — not tied to officers, training or 1st letter |
 | 1st Appointment Letter | Officers + Training | Duty and training only |
-| 2nd Randomisation | Officers + Booths | Party / PCCP / Micro formation; booth not disclosed |
-| Final Randomisation | 2nd locked | Booth tagging; untagged = Reserve |
+| 2nd Randomisation | Officers + Booths | Three independent parts — Polling parties, PCCP, Micro Observers — each run / re-run / locked separately, in any order; booth not disclosed |
+| Final Randomisation | Same part locked in 2nd | Booth tagging, again part by part in any order; untagged = Reserve |
 
 ## Rules enforced
 

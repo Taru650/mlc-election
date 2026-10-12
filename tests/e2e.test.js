@@ -38,14 +38,76 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   ok(sec.p === 14 && sec.c === 14 && sec.m === 14, `2nd randomisation formed 14 parties / 14 PCCP / 14 MO (got ${JSON.stringify(sec)})`);
   await page.evaluate(() => __MLC.ACT.lock('second'));
   ok(await page.evaluate(() => __MLC.S.locks.second), 'locked 2nd randomisation');
-  await page.evaluate(() => __MLC.ACT.runFinal('all'));
-  await page.waitForTimeout(1500);
+  for (const k of ['polling', 'pccp', 'micro']) {
+    await page.evaluate(k => __MLC.ACT.runFinal(k), k);
+    await page.waitForTimeout(1400);
+  }
   const fin = await page.evaluate(() => ({ p: Object.keys(__MLC.S.final.polling).length, c: Object.keys(__MLC.S.final.pccp).length, m: Object.keys(__MLC.S.final.micro).length }));
   ok(fin.p === 12 && fin.c === 12 && fin.m === 12, `final tagging 12/12/12 (got ${JSON.stringify(fin)})`);
   await page.evaluate(() => __MLC.ACT.lock('final'));
   ok(await page.evaluate(() => __MLC.S.locks.final), 'locked final randomisation');
   const audit = await page.evaluate(() => __MLC.runAudit().map(c => [c.stage, c.rule, c.ok, c.bad.slice(0, 2)]));
   ok(audit.length >= 12 && audit.every(c => c[2]), `all ${audit.length} audit checks pass`);
+
+  console.log('2b. 2nd / final parts are independent — any order, re-run freely, lock separately');
+  await page.evaluate(() => { __MLC.ACT.loadTestData('small'); ['setup', 'training', 'officers', 'booths'].forEach(m => __MLC.ACT.lock(m)); });
+  const run2 = async k => { await page.evaluate(k => __MLC.ACT.runSecond(k), k); await page.waitForTimeout(1400); };
+  const runF = async k => { await page.evaluate(k => __MLC.ACT.runFinal(k), k); await page.waitForTimeout(1400); };
+  const parts = () => page.evaluate(() => JSON.parse(JSON.stringify(__MLC.S.parts)));
+  // Micro Observers first, re-run 3 times — must change each time, other parts untouched
+  const moSets = new Set();
+  for (let i = 0; i < 3; i++) { await run2('micro'); moSets.add(await page.evaluate(() => __MLC.S.second.micro.map(x => x.pin).join())); }
+  ok(moSets.size === 3, 'Micro Observers re-run 3× → 3 different selections');
+  await page.evaluate(() => __MLC.ACT.lockPart('second:micro'));
+  let pt = await parts();
+  ok(pt.second.micro && !pt.second.polling && !pt.second.pccp, 'locking Micro Observers locks only Micro Observers');
+  ok(await page.evaluate(() => __MLC.S.second.parties.length === 0 && __MLC.S.second.pccp.length === 0), 'polling parties and PCCP not formed by locking MO');
+  const moLocked = await page.evaluate(() => __MLC.S.second.micro.map(x => x.pin).join());
+  // final for MO can start before polling / PCCP are even formed
+  await runF('micro');
+  await page.evaluate(() => __MLC.ACT.lockPart('final:micro'));
+  ok((await parts()).final.micro, 'MO final tagging done and locked while polling & PCCP not yet formed');
+  // PCCP next, then polling, re-running polling several times
+  await run2('pccp'); await run2('pccp');
+  await page.evaluate(() => __MLC.ACT.lockPart('second:pccp'));
+  const pSets = new Set();
+  for (let i = 0; i < 3; i++) { await run2('polling'); pSets.add(await page.evaluate(() => __MLC.S.second.parties.map(p => p.PRO + p.P1).join())); }
+  ok(pSets.size === 3, 'polling parties re-run 3× → 3 different sets');
+  ok(await page.evaluate(m => __MLC.S.second.micro.map(x => x.pin).join() === m && Object.keys(__MLC.S.final.micro).length === 12, moLocked), 're-running polling did not touch locked MO selection or MO booth tagging');
+  ok(await page.evaluate(() => !__MLC.S.locks.second), '2nd stage counts as complete only when all parts locked (2/3 now)');
+  // a locked part cannot be re-run
+  const before = await page.evaluate(() => __MLC.S.second.pccp.map(x => x.pin).join());
+  await page.evaluate(() => __MLC.ACT.runSecond('pccp')); await page.waitForTimeout(300);
+  ok(await page.evaluate(b => __MLC.S.second.pccp.map(x => x.pin).join() === b, before), 'locked PCCP refuses re-run');
+  await page.evaluate(() => __MLC.ACT.lockPart('second:polling'));
+  ok(await page.evaluate(() => __MLC.S.locks.second), 'all three parts locked → 2nd stage complete');
+  // unlock one part: only that part opens
+  await page.evaluate(() => __MLC.ACT.unlockPart('second:pccp'));
+  pt = await parts();
+  ok(!pt.second.pccp && pt.second.polling && pt.second.micro && pt.final.micro, 'unlocking PCCP leaves polling and MO (2nd + final) locked');
+  // MO 2nd cannot be unlocked while its final part is locked
+  await page.evaluate(() => __MLC.ACT.unlockPart('second:micro'));
+  ok((await parts()).second.micro, 'MO 2nd stays locked while MO final is locked');
+  // Excel round-trip keeps part locks; old files (whole-stage lock only) map to all parts locked
+  const rtp = await page.evaluate(() => {
+    const buf = XLSX.write(__MLC.buildProjectWorkbook(), { bookType: 'xlsx', type: 'array' });
+    const st = __MLC.parseProjectWorkbook(XLSX.read(new Uint8Array(buf), { type: 'array' }));
+    const cur = __MLC.S;
+    __MLC.S = st; const back = JSON.stringify(__MLC.S.parts);
+    __MLC.S = cur;
+    const old = { app: 'MLC_POLLING_TOOL', locks: { second: true, final: false } };
+    __MLC.S = old; const oldParts = JSON.parse(JSON.stringify(__MLC.S.parts));
+    __MLC.S = cur;
+    return { same: back === JSON.stringify(cur.parts), oldParts };
+  });
+  ok(rtp.same, 'project Excel round-trip keeps per-part locks');
+  ok(rtp.oldParts.second.polling && rtp.oldParts.second.micro && !rtp.oldParts.final.polling, 'older project files: whole-stage lock → all parts locked');
+  // finish in a different order: PCCP again, then final polling, then final PCCP
+  await run2('pccp'); await page.evaluate(() => __MLC.ACT.lockPart('second:pccp'));
+  await runF('polling'); await page.evaluate(() => __MLC.ACT.lockPart('final:polling'));
+  await runF('pccp'); await page.evaluate(() => __MLC.ACT.lockPart('final:pccp'));
+  ok(await page.evaluate(() => __MLC.S.locks.second && __MLC.S.locks.final && __MLC.runAudit().every(c => c.ok)), 'completed in order MO → PCCP → polling: both stages complete, all rule checks pass');
+  ok(errors.length === 0, 'no errors during part-wise workflow: ' + errors.join(' | '));
 
   console.log('3. Every view, letter and report renders');
   for (const v of ['home', 'setup', 'training', 'officers', 'booths', 'letter1', 'second', 'final', 'reports', 'data']) {

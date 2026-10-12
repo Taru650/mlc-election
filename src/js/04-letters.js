@@ -151,7 +151,7 @@ function regDoc(title, inner, land = true) {
   return `<div class="doc reg ${land ? 'land' : ''}"><div class="c b" style="font-size:16px">${esc(T().electionTitle)}</div><div class="c b" style="margin-bottom:8px">${esc(title)} — ${esc(T().district)}</div>${inner}<div class="small" style="margin-top:6px">Generated: ${esc(nowStamp())}</div></div>`;
 }
 function nameMob(pin) { const o = officerByPin(pin); return o ? `${esc(o.name)}<br><small>${esc(o.pin)} · ${esc(o.mobile)}</small>` : ''; }
-function tagged(kind, boothId) { const list = kind === 'pccp' ? S.second.pccp : S.second.micro; return list.find(x => x.orderNo === S.final[kind][boothId]) || null; }
+function tagged(kind, boothId) { if (!S.parts.final[kind]) return null; const list = kind === 'pccp' ? S.second.pccp : S.second.micro; return list.find(x => x.orderNo === S.final[kind][boothId]) || null; }
 function finalPartyOf(b) { return S.second.parties.find(p => p.partyNo === S.final.polling[b.id]) || null; }
 function reserveParties() { const used = new Set(Object.values(S.final.polling)); return S.second.parties.filter(p => !used.has(p.partyNo)); }
 function reserveSingles(kind) { const used = new Set(Object.values(S.final[kind])); return S.second[kind].filter(x => !used.has(x.orderNo)); }
@@ -166,8 +166,8 @@ const REPORTS = {
   dispatch: ['Dispatch attendance register', () => regDoc('DISPATCH ATTENDANCE REGISTER', `<table class="lt"><tr><th>Booth</th><th>Party</th><th>Duty</th><th>PIN</th><th>Name</th><th>Mobile</th><th style="width:20%">Signature</th></tr>
     ${S.booths.map(b => { const p = finalPartyOf(b); if (!p) return ''; return PARTY_ROLES.map(r => { const o = officerByPin(p[r]) || {}; return `<tr><td>${esc(b.const)} ${esc(boothLabel(b))}</td><td>${esc(p.partyNo)}</td><td>${esc(DUTY_BY_KEY[r].short)}</td><td>${esc(o.pin)}</td><td>${esc(o.name)}</td><td>${esc(o.mobile)}</td><td></td></tr>`; }).join(''); }).join('')}</table>`, false)],
   reserve: ['Reserve register', () => regDoc('RESERVE REGISTER', `<h4>Reserve polling parties</h4><table class="lt"><tr><th>Party</th><th>Const.</th><th>PrO</th><th>P1</th><th>P2</th><th>P3</th></tr>${reserveParties().map(p => `<tr><td><b>${esc(p.partyNo)}</b></td><td>${esc(p.const)}</td>${PARTY_ROLES.map(r => `<td>${nameMob(p[r])}</td>`).join('')}</tr>`).join('')}</table>
-    <h4>Reserve PCCP</h4><table class="lt"><tr><th>Order</th><th>Const.</th><th>Officer</th></tr>${reserveSingles('pccp').map(x => `<tr><td>${esc(x.orderNo)}</td><td>${esc(x.const)}</td><td>${nameMob(x.pin)}</td></tr>`).join('')}</table>
-    <h4>Reserve Micro Observers</h4><table class="lt"><tr><th>Order</th><th>Const.</th><th>Officer</th></tr>${reserveSingles('micro').map(x => `<tr><td>${esc(x.orderNo)}</td><td>${esc(x.const)}</td><td>${nameMob(x.pin)}</td></tr>`).join('')}</table>`)],
+    <h4>Reserve PCCP</h4><table class="lt"><tr><th>Order</th><th>Const.</th><th>Officer</th></tr>${(S.parts.final.pccp ? reserveSingles('pccp') : []).map(x => `<tr><td>${esc(x.orderNo)}</td><td>${esc(x.const)}</td><td>${nameMob(x.pin)}</td></tr>`).join('')}</table>
+    <h4>Reserve Micro Observers</h4><table class="lt"><tr><th>Order</th><th>Const.</th><th>Officer</th></tr>${(S.parts.final.micro ? reserveSingles('micro') : []).map(x => `<tr><td>${esc(x.orderNo)}</td><td>${esc(x.const)}</td><td>${nameMob(x.pin)}</td></tr>`).join('')}</table>`)],
   remaining: ['Officers not selected in 2nd randomisation', () => {
     const used = new Set(); S.second.parties.forEach(p => PARTY_ROLES.forEach(r => used.add(String(p[r])))); S.second.pccp.forEach(x => used.add(String(x.pin))); S.second.micro.forEach(x => used.add(String(x.pin)));
     const rows = S.officers.filter(o => !used.has(String(o.pin)));
@@ -181,20 +181,20 @@ const REPORTS = {
 };
 
 VIEWS.reports = () => {
-  const fin = S.locks.final, sec = S.locks.second;
+  const sp = S.parts.second, fp = S.parts.final, fin = fp.polling;
   const card = (t, d, btns) => `<div class="step"><h4>${esc(t)}</h4><div class="small muted">${esc(d)}</div><div class="btn-row">${btns}</div></div>`;
   const b = (act, arg, label, en) => `<button class="btn sm ${en ? 'pri' : ''}" data-act="${act}" data-arg="${arg}" ${en ? '' : 'disabled'}>${esc(label)}</button>`;
   return `<div class="card"><div class="card-head"><h2>Reports &amp; Letters</h2></div>
-    <p class="small muted">2nd letters are available after the 2nd randomisation is locked; final letters and registers after the final randomisation is locked.</p>
+    <p class="small muted">Each letter set opens as soon as its own part is locked: 2nd letters after that part of the 2nd randomisation is locked, final letters after that part of the final randomisation is locked. Booth registers need the polling-party final tagging locked; PCCP / MO columns fill in once those parts are locked.</p>
     <div class="flow">
       ${card('1st appointment letters', 'Duty + training. Choose training rows on the 1st letter page.', b('go', 'letter1', 'Open 1st letter page', true))}
       ${card('Training attendance', 'Duty-wise, A4 landscape.', b('go', 'training', 'Open training page', true))}
-      ${card('2nd letters — polling parties', 'Booth not disclosed.', b('previewSecond', 'polling', 'Open', sec))}
-      ${card('2nd letters — PCCP', 'Booth not disclosed.', b('previewSecond', 'pccp', 'Open', sec && S.second.pccp.length))}
-      ${card('2nd letters — Micro Observers', 'Booth not disclosed.', b('previewSecond', 'micro', 'Open', sec && S.second.micro.length))}
-      ${card('Final letters — main parties', 'Booth disclosed.', b('finalLetters', 'polling', 'Open', fin))}
-      ${card('Final letters — PCCP / MO', 'Booth disclosed.', b('finalLetters', 'pccp', 'PCCP', fin && S.second.pccp.length) + b('finalLetters', 'micro', 'Micro Obs.', fin && S.second.micro.length))}
-      ${card('Final letters — reserve', 'One letter per reserve officer.', b('finalLetters', 'reserve', 'Open', fin))}
+      ${card('2nd letters — polling parties', 'Booth not disclosed.', b('previewSecond', 'polling', 'Open', sp.polling))}
+      ${card('2nd letters — PCCP', 'Booth not disclosed.', b('previewSecond', 'pccp', 'Open', sp.pccp && S.second.pccp.length))}
+      ${card('2nd letters — Micro Observers', 'Booth not disclosed.', b('previewSecond', 'micro', 'Open', sp.micro && S.second.micro.length))}
+      ${card('Final letters — main parties', 'Booth disclosed.', b('finalLetters', 'polling', 'Open', fp.polling))}
+      ${card('Final letters — PCCP / MO', 'Booth disclosed.', b('finalLetters', 'pccp', 'PCCP', fp.pccp && S.second.pccp.length) + b('finalLetters', 'micro', 'Micro Obs.', fp.micro && S.second.micro.length))}
+      ${card('Final letters — reserve', 'One letter per reserve officer of each locked part.', b('finalLetters', 'reserve', 'Open', PART_KINDS.some(k => fp[k])))}
       ${Object.entries(REPORTS).map(([k, [t]]) => card(t, k === 'remaining' ? 'After 2nd randomisation.' : k === 'audit' || k === 'log' ? 'Any time.' : 'After final randomisation.', b('report', k, 'Open', k === 'audit' || k === 'log' || (k === 'remaining' ? S.second.parties.length > 0 : fin)))).join('')}
     </div></div>
     <div class="card"><div class="card-head"><h3>Excel exports</h3></div><div class="btn-row">
@@ -204,6 +204,7 @@ VIEWS.reports = () => {
 };
 ACT.report = k => { const r = REPORTS[k]; if (r) openDoc(r[0], r[1]()); };
 ACT.finalLetters = kind => {
+  if (kind !== 'reserve' && !S.parts.final[kind]) return toast(`Lock ${PART_NAME[kind]} in the final randomisation first.`, 'bad');
   if (kind === 'polling') {
     const html = S.booths.map(b => { const p = finalPartyOf(b); return p ? finalPartyLetterHtml(b, p) : ''; }).join('');
     return openDoc(`Final Appointment Letters — Main (${Object.keys(S.final.polling).length})`, html);
@@ -213,7 +214,7 @@ ACT.finalLetters = kind => {
     return openDoc(`Final Appointment Letters — ${kind === 'pccp' ? 'PCCP' : 'Micro Observer'}`, html);
   }
   const parts = [];
-  reserveParties().forEach(p => PARTY_ROLES.forEach(r => { const o = officerByPin(p[r]); if (o) parts.push(reserveLetterHtml(o, p.partyNo, p.const)); }));
-  ['pccp', 'micro'].forEach(k => reserveSingles(k).forEach(x => { const o = officerByPin(x.pin); if (o) parts.push(reserveLetterHtml(o, x.orderNo, x.const)); }));
+  if (S.parts.final.polling) reserveParties().forEach(p => PARTY_ROLES.forEach(r => { const o = officerByPin(p[r]); if (o) parts.push(reserveLetterHtml(o, p.partyNo, p.const)); }));
+  ['pccp', 'micro'].filter(k => S.parts.final[k]).forEach(k => reserveSingles(k).forEach(x => { const o = officerByPin(x.pin); if (o) parts.push(reserveLetterHtml(o, x.orderNo, x.const)); }));
   openDoc(`Final Appointment Letters — Reserve (${parts.length})`, parts.join(''));
 };
