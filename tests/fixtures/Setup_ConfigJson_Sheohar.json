@@ -1,0 +1,154 @@
+{
+  "electionTitle": "Election to the Biennial Election to Bihar Legislative Council, 2026 for Tirhut Teachers/Graduates Constituency",
+  "district": "Sheohar",
+  "distCode": "03",
+  "reservePct": 10,
+  "roCumDeo": "Pratibha Rani, District Election Officer cum District Magistrate, Sheohar",
+  "tc": {
+    "name": "04-Tirhut Teachers",
+    "booths": 6,
+    "parties": 6,
+    "pccp": 6,
+    "micro": 6
+  },
+  "gc": {
+    "name": "04-Tirhut Graduates",
+    "booths": 6,
+    "parties": 6,
+    "pccp": 6,
+    "micro": 6
+  },
+  "pollDate": "2026-10-23",
+  "pollFrom": "08:00",
+  "pollTo": "16:00",
+  "reportVenue": "Khel Bhawan, Sheohar",
+  "letterDate": "2026-10-03",
+  "matCollectVenue": "Khel Bhawan, Sheohar",
+  "matCollectDate": "2026-10-22",
+  "matCollectTime": "10:00",
+  "matDeposit": "MIT, Muzaffarpur",
+  "authIssueTitle": "Authorised to Issue Officer I/c",
+  "authSubTitle": "District Election Officer, Sheohar",
+  "trainingSchedules": {
+    "PRESIDING OFFICER": [
+      {
+        "date": "2026-10-08",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "AV Hall ,MIT Muzaffarpur"
+      },
+      {
+        "date": "2026-10-12",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "AV Hall ,MIT Muzaffarpur"
+      },
+      {
+        "date": "2026-10-22",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "At Briefing Place"
+      }
+    ],
+    "POLLING OFFICER-1": [
+      {
+        "date": "2026-10-08",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "AV Hall ,MIT Muzaffarpur"
+      },
+      {
+        "date": "2026-10-12",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "AV Hall ,MIT Muzaffarpur"
+      },
+      {
+        "date": "2026-10-22",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "At Briefing Place"
+      }
+    ],
+    "POLLING OFFICER-2": [
+      {
+        "date": "2026-10-08",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-12",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-22",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "At Briefing Place"
+      }
+    ],
+    "POLLING OFFICER-3": [
+      {
+        "date": "2026-10-08",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-12",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-22",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "At Briefing Place"
+      }
+    ],
+    "PATROLLING MAGISTRATE": [
+      {
+        "date": "2026-10-08",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-12",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-22",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "At Briefing Place"
+      }
+    ],
+    "MICRO OBSERVER": [
+      {
+        "date": "2026-10-08",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-12",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-22",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "At Briefing Place"
+      }
+    ]
+  }
+}

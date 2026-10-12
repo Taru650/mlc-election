@@ -1,0 +1,130 @@
+{
+  "fileType": "MLC_TRAINING_SCHEDULE",
+  "version": 1,
+  "districtCode": "03",
+  "districtName": "Sheohar",
+  "electionTitle": "Biennial Election to Bihar Legislative Council, 2026",
+  "exportedAt": "2026-10-03T10:41:33.251Z",
+  "trainingSchedules": {
+    "PRESIDING OFFICER": [
+      {
+        "date": "2026-10-08",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "AV Hall ,MIT Muzaffarpur"
+      },
+      {
+        "date": "2026-10-12",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "AV Hall ,MIT Muzaffarpur"
+      },
+      {
+        "date": "2026-10-22",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "At Briefing Place"
+      }
+    ],
+    "POLLING OFFICER-1": [
+      {
+        "date": "2026-10-08",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "AV Hall ,MIT Muzaffarpur"
+      },
+      {
+        "date": "2026-10-12",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "AV Hall ,MIT Muzaffarpur"
+      },
+      {
+        "date": "2026-10-22",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "At Briefing Place"
+      }
+    ],
+    "POLLING OFFICER-2": [
+      {
+        "date": "2026-10-08",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-12",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-22",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "At Briefing Place"
+      }
+    ],
+    "POLLING OFFICER-3": [
+      {
+        "date": "2026-10-08",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-12",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-22",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "At Briefing Place"
+      }
+    ],
+    "PATROLLING MAGISTRATE": [
+      {
+        "date": "2026-10-08",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-12",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-22",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "At Briefing Place"
+      }
+    ],
+    "MICRO OBSERVER": [
+      {
+        "date": "2026-10-08",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-12",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "Khel Bhawan, Sheohar"
+      },
+      {
+        "date": "2026-10-22",
+        "start": "11:00",
+        "end": "13:00",
+        "venue": "At Briefing Place"
+      }
+    ]
+  }
+}
