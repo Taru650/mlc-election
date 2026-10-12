@@ -836,7 +836,21 @@ function singleFeasibility(kind) {
   const need = plan.reduce((a, p) => a + p.target, 0);
   if (pools[role].length < need) probs.push(`${DUTY_BY_KEY[role].label}: need ${need} (required + ${S.setup.reservePct}% reserve), available ${pools[role].length}.`);
   plan.forEach(p => { if (p.required > p.booths) probs.push(`${p.code}: required ${p.required} but only ${p.booths} booths.`); });
+  probs.push(...singleBlockShortages(kind, pools[role], true));
   return probs;
+}
+/** Blocks where too few PCCP / MO have BOTH home and posting block outside the block.
+ *  strict=true reports only blocks where every booth must be covered (required = booths). */
+function singleBlockShortages(kind, pool, strict) {
+  const role = kind === 'pccp' ? 'PM' : 'MO', out = [], byBlock = new Map();
+  singlePlan(kind).filter(p => !strict || p.required >= p.booths).forEach(p => boothsOf(p.code).forEach(b => {
+    const k = blockKey(b.block); if (!byBlock.has(k)) byBlock.set(k, { name: b.block, n: 0 }); byBlock.get(k).n++;
+  }));
+  byBlock.forEach((v, k) => {
+    const elig = pool.filter(m => !m.ex.has(k)).length;
+    if (elig < v.n) out.push(`Block "${v.name}" has ${v.n} booth(s) needing a ${DUTY_BY_KEY[role].label} but only ${elig} whose home & posting block are outside it.`);
+  });
+  return out;
 }
 
 /** Forms PCCP / Micro Observer pool. Main picks are made against hidden random booths so final tagging is feasible. */
@@ -871,7 +885,8 @@ function formSingles(kind) {
     plan.forEach(pl => shuffle(out.filter(x => x.code === pl.code)).forEach((x, i) => items.push({ orderNo: `${pl.code}-${tag}-${pad(i + 1, String(pl.target).length > 2 ? 3 : 2)}`, const: pl.code, pin: x.pin })));
     return { items, attempts: attempt + 1 };
   }
-  throw new Error(`Could not select ${tag} satisfying the block rule after 300 attempts. Add more ${DUTY_BY_KEY[role].label}s from other blocks.`);
+  const hint = singleBlockShortages(kind, pools[role], false);
+  throw new Error(`Could not select ${tag} satisfying the home/posting block rule after 300 attempts. Add more ${DUTY_BY_KEY[role].label}s from other blocks.` + (hint.length ? '\n• ' + hint.join('\n• ') : ''));
 }
 
 /* ---------------- final randomisation (bipartite matching) ---------------- */

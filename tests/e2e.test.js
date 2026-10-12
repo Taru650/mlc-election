@@ -149,6 +149,27 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   const relax = await page.evaluate(() => { __MLC.S.setup.ruleDistinctOffice = false; try { return __MLC.formPollingParties().parties.length; } catch (e) { return e.message; } });
   ok(relax === 14, 'same data forms parties once the office rule is switched off');
 
+  console.log('7b. PCCP & Micro Observer never tagged in their home or posting block (independent check)');
+  const pm = await page.evaluate(() => {
+    const norm = s => String(s || '').toLowerCase().replace(/\b(block|prakhand|blk)\b/g, ' ').replace(/[^a-z0-9]+/g, '');
+    const check = S => { let n = 0, bad = 0; for (const kind of ['pccp', 'micro']) for (const [bid, ord] of Object.entries(S.final[kind])) {
+      const b = S.booths.find(x => x.id === bid), it = S.second[kind].find(x => x.orderNo === ord), o = S.officers.find(x => x.pin === it.pin);
+      n++; if ([o.homeBlock, o.postingBlock].map(norm).includes(norm(b.block))) bad++; } return [n, bad]; };
+    const run = S => { S.second.pccp = __MLC.formSingles('pccp').items; S.second.micro = __MLC.formSingles('micro').items; S.final.pccp = __MLC.finalSingles('pccp'); S.final.micro = __MLC.finalSingles('micro'); return check(S); };
+    let n = 0, bad = 0;
+    __MLC.S = __MLC.generateTestState('small');
+    const S = __MLC.S, blocks = [...new Set(S.booths.map(b => b.block))];
+    // tight: every PCCP/MO has home and posting block inside booth blocks
+    S.officers.filter(o => /PATROLLING|MICRO/.test(o.duty)).forEach((o, i) => { o.homeBlock = blocks[i % blocks.length]; o.postingBlock = blocks[(i + 1) % blocks.length]; });
+    for (let i = 0; i < 150; i++) { const [a, c] = run(S); n += a; bad += c; }
+    __MLC.S = __MLC.generateTestState('small'); const X = __MLC.S.booths[0].block;
+    __MLC.S.officers.filter(o => o.duty === 'MICRO OBSERVER').forEach(o => { o.homeBlock = X; });
+    let msg = 'placed'; try { __MLC.formSingles('micro'); } catch (e) { msg = e.message; }
+    return { n, bad, msg, X };
+  });
+  ok(pm.n === 150 * 24 && pm.bad === 0, `${pm.n} PCCP/MO tags on tight data, ${pm.bad} in own home/posting block`);
+  ok(pm.msg.includes(pm.X) && /MICRO OBSERVER/.test(pm.msg), 'impossible MO data refused, naming the block: ' + pm.msg.split('\n')[1]);
+
   console.log('8. Validation catches bad data');
   const v = await page.evaluate(() => { __MLC.S = __MLC.generateErrorState(); return { o: __MLC.validateOfficers().errors, ow: __MLC.validateOfficers().warnings, b: __MLC.validateBooths().errors }; });
   ok(v.o.some(e => /duplicate PIN/.test(e)), 'duplicate PIN'); ok(v.o.some(e => /posting block missing/.test(e)), 'missing posting block');
