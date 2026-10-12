@@ -132,6 +132,18 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   ok(blockProof.bad === 0 && blockProof.good === 12 * 6, `block exclusion proof: ${blockProof.good} ✔, ${blockProof.bad} ✖`);
   ok(errors.length === 0, 'no errors while rendering: ' + errors.join(' | '));
 
+  console.log('3b. Final party letter shows designation & office and prints one letter per A4 page');
+  const fl = await page.evaluate(() => { __MLC.ACT.finalLetters('polling'); const h = document.querySelector('#docBody').innerHTML; document.querySelector('#printArea').innerHTML = h; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    const S = __MLC.S, p = S.second.parties.find(x => x.partyNo === S.final.polling[S.booths[0].id]);
+    return ['PRO', 'P1', 'P2', 'P3'].every(r => { const o = S.officers.find(x => x.pin === p[r]); return h.includes(o.designation) && h.includes(o.office.replace(/&/g, '&amp;')); }); });
+  ok(fl, 'designation and office of PrO, P1, P2, P3 appear in the final letter');
+  await page.emulateMedia({ media: 'print' });
+  const pdfBuf = await page.pdf({ preferCSSPageSize: true });
+  await page.emulateMedia({ media: 'screen' });
+  await page.evaluate(() => { document.querySelector('#printArea').innerHTML = ''; });
+  const pages = (pdfBuf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+  ok(pages === 12, `12 final letters print as ${pages} A4 pages`);
+
   console.log('4. Project Excel round-trip');
   const rt = await page.evaluate(() => {
     const wb = __MLC.buildProjectWorkbook();

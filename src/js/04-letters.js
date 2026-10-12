@@ -90,16 +90,21 @@ function secondSingleLetterHtml(x, kind) {
 }
 
 /* ---------- final letters (booth disclosed) ---------- */
+/** Designation and office printed under an officer's name in the final party letter. */
+function desigOffice(o) {
+  const parts = [o.designation, o.office].map(str).filter(Boolean);
+  return parts.length ? `<div class="dsub">${esc(parts.join(', '))}</div>` : '';
+}
 function finalPartyLetterHtml(b, p) {
   const m = r => officerByPin(p[r]) || {};
   return `<div class="doc">${annexHead('Order of Final Appointment Letter')}
     <div class="hdr2"><span>ELECTION URGENT</span><span>PARTY NO :- ${esc(p.partyNo)}</span></div>
     <p>In pursuance of sub-section (1) and sub-section (3) of section 26 of the Representation of the People Act, 1951 (43 of 1951), I hereby appoint the officers specified in columns 2 and 3 of the table below as Presiding Officer and Polling Officers respectively for the polling station specified in column 1, for <b>${esc(constName(b.const))}</b>. I also authorise the Polling Officer specified in column 4 to perform the functions of the Presiding Officer during the unavoidable absence, if any, of the Presiding Officer.</p>
-    <table class="lt"><tr><th style="width:30%">Polling station no., name &amp; location<div class="c">1</div></th><th style="width:24%">Presiding Officer<div class="c">2</div></th><th style="width:26%">Polling Officers<div class="c">3</div></th><th>PO authorised in absence of PrO<div class="c">4</div></th></tr>
+    <table class="lt fl"><tr><th style="width:24%">Polling station no., name &amp; location<div class="c">1</div></th><th style="width:25%">Presiding Officer<div class="c">2</div></th><th style="width:33%">Polling Officers<div class="c">3</div></th><th>PO authorised in absence of PrO<div class="c">4</div></th></tr>
     <tr><td><b>Booth No :</b> ${esc(boothLabel(b))}<br><b>Location :</b> ${esc(b.name)}<br><b>Block :</b> ${esc(b.block)}<br><small>Constituency : ${esc(b.const)}</small></td>
-    <td><b>${esc(m('PRO').name)}</b><br>PIN: ${esc(m('PRO').pin)}<br>${esc(m('PRO').designation)}<br>${esc(m('PRO').mobile)}</td>
-    <td>1. ${esc(m('P1').name)} (P1, ${esc(m('P1').pin)})<br>2. ${esc(m('P2').name)} (P2, ${esc(m('P2').pin)})<br>3. ${esc(m('P3').name)} (P3, ${esc(m('P3').pin)})</td>
-    <td style="text-align:center;vertical-align:middle"><b>${esc(m('P1').name)}</b><br>(Polling Officer-1)</td></tr></table>
+    <td><b>${esc(m('PRO').name)}</b>${desigOffice(m('PRO'))}<div class="dsub">PIN: ${esc(m('PRO').pin)} · Mob: ${esc(m('PRO').mobile)}</div></td>
+    <td>${['P1', 'P2', 'P3'].map((r, i) => `<div class="po${i ? ' po-next' : ''}">${i + 1}. <b>${esc(m(r).name)}</b> (${r})${desigOffice(m(r))}<div class="dsub">PIN: ${esc(m(r).pin)} · Mob: ${esc(m(r).mobile)}</div></div>`).join('')}</td>
+    <td style="text-align:center;vertical-align:middle"><b>${esc(m('P1').name)}</b><br>(Polling Officer-1)${desigOffice(m('P1'))}</td></tr></table>
     <div class="note">The poll will be taken on ${pollHours()}.<br>The Presiding Officer should collect the polling materials from ${matCollect()} and, after the poll, return them at <b>${esc(T().matDeposit)}</b>.</div>
     ${sigBlock()}
     ${receipt('Final Appointment Letter — Receipt', [`Party No :- <b>${esc(p.partyNo)}</b><br>PrO :- <b>${esc(m('PRO').name)}</b>`, `PIN :- <b>${esc(m('PRO').pin)}</b><br>Contact :- ${esc(m('PRO').mobile)}`, `Booth No :- <b>${esc(boothLabel(b))}</b><br>Block :- ${esc(b.block)}`])}
