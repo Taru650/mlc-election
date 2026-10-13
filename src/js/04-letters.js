@@ -69,7 +69,6 @@ function secondPartyLetterHtml(p) {
     <table class="lt"><tr><th>Duty</th><th>Name</th><th>PIN</th><th>Designation &amp; Office</th><th>Contact</th></tr>${rows}</table>
     <div class="note"><b>IMPORTANT:</b><br>1) The poll will be taken on ${pollHours()}.<br>2) Polling materials are to be collected from ${matCollect()} and, after the poll, returned at <b>${esc(T().matDeposit)}</b>.<br>3) The polling station will be notified later through the Final Appointment Letter.</div>
     ${sigBlock()}
-    ${receipt(`Second Appointment Letter — Receipt (Party No ${p.partyNo})`, [`Presiding Officer :- <b>${esc(pro.name)}</b>`, `PIN :- <b>${esc(pro.pin)}</b>`, `Contact :- ${esc(pro.mobile)}`])}
   </div>`;
 }
 function secondSingleLetterHtml(x, kind) {
@@ -85,7 +84,6 @@ function secondSingleLetterHtml(x, kind) {
     <tr><td>${officerDetails(o, false)}</td><td style="vertical-align:middle"><b>Duty :- ${duty}</b><br>Constituency :- ${esc(x.const)}<br><i>Booth will be notified later.</i></td></tr></table>
     <div class="note"><b>IMPORTANT:</b><br>${instr}</div>
     ${sigBlock()}
-    ${receipt(`Second Appointment Letter — Receipt (${isP ? 'PCCP' : 'Micro Observer'})`, [`Name :- <b>${esc(o.name)}</b><br>PIN :- <b>${esc(o.pin)}</b>`, `Order No :- <b>${esc(x.orderNo)}</b><br>Contact :- ${esc(o.mobile)}`, `Duty :- <b>${duty}</b><br>Posting Block :- ${esc(o.postingBlock)}`])}
   </div>`;
 }
 
@@ -99,15 +97,14 @@ function finalPartyLetterHtml(b, p) {
   const m = r => officerByPin(p[r]) || {};
   return `<div class="doc">${annexHead('Order of Final Appointment Letter')}
     <div class="hdr2"><span>ELECTION URGENT</span><span>PARTY NO :- ${esc(p.partyNo)}</span></div>
-    <p>In pursuance of sub-section (1) and sub-section (3) of section 26 of the Representation of the People Act, 1951 (43 of 1951), I hereby appoint the officers specified in columns 2 and 3 of the table below as Presiding Officer and Polling Officers respectively for the polling station specified in column 1, for <b>${esc(constName(b.const))}</b>. I also authorise the Polling Officer specified in column 4 to perform the functions of the Presiding Officer during the unavoidable absence, if any, of the Presiding Officer.</p>
-    <table class="lt fl"><tr><th style="width:24%">Polling station no., name &amp; location<div class="c">1</div></th><th style="width:25%">Presiding Officer<div class="c">2</div></th><th style="width:33%">Polling Officers<div class="c">3</div></th><th>PO authorised in absence of PrO<div class="c">4</div></th></tr>
+    <p>In pursuance of sub-section (1) and sub-section (3) of section 26 of the Representation of the People Act, 1951 (43 of 1951), I hereby appoint the officers specified in columns 2 and 3 of the table below as Presiding Officer and Polling Officers respectively for the polling station specified in column 1, for <b>${esc(constName(b.const))}</b>. I also authorise the Polling Officer-1 (P1) specified in column 4 to perform the functions of the Presiding Officer during the unavoidable absence, if any, of the Presiding Officer.</p>
+    <table class="lt fl"><tr><th style="width:24%">Polling station no., name &amp; location<div class="c">1</div></th><th style="width:25%">Presiding Officer<div class="c">2</div></th><th style="width:33%">Polling Officers<div class="c">3</div></th><th>P1 authorised in absence of PO<div class="c">4</div></th></tr>
     <tr><td><b>Booth No :</b> ${esc(boothLabel(b))}<br><b>Location :</b> ${esc(b.name)}<br><b>Block :</b> ${esc(b.block)}<br><small>Constituency : ${esc(b.const)}</small></td>
     <td><b>${esc(m('PRO').name)}</b>${desigOffice(m('PRO'))}<div class="dsub">PIN: ${esc(m('PRO').pin)} · Mob: ${esc(m('PRO').mobile)}</div></td>
     <td>${['P1', 'P2', 'P3'].map((r, i) => `<div class="po${i ? ' po-next' : ''}">${i + 1}. <b>${esc(m(r).name)}</b> (${r})${desigOffice(m(r))}<div class="dsub">PIN: ${esc(m(r).pin)} · Mob: ${esc(m(r).mobile)}</div></div>`).join('')}</td>
     <td style="text-align:center;vertical-align:middle"><b>${esc(m('P1').name)}</b><br>(Polling Officer-1)${desigOffice(m('P1'))}</td></tr></table>
     <div class="note">The poll will be taken on ${pollHours()}.<br>The Presiding Officer should collect the polling materials from ${matCollect()} and, after the poll, return them at <b>${esc(T().matDeposit)}</b>.</div>
     ${sigBlock()}
-    ${receipt('Final Appointment Letter — Receipt', [`Party No :- <b>${esc(p.partyNo)}</b><br>PrO :- <b>${esc(m('PRO').name)}</b>`, `PIN :- <b>${esc(m('PRO').pin)}</b><br>Contact :- ${esc(m('PRO').mobile)}`, `Booth No :- <b>${esc(boothLabel(b))}</b><br>Block :- ${esc(b.block)}`])}
   </div>`;
 }
 function finalSingleLetterHtml(x, b, kind) {
@@ -120,7 +117,6 @@ function finalSingleLetterHtml(x, b, kind) {
     <tr><td>${officerDetails(o, false)}<br><b>Duty :- ${duty}</b></td><td><b>Booth No :</b> ${esc(boothLabel(b))}<br><b>Location :</b> ${esc(b.name)}<br><b>Block :</b> ${esc(b.block)}<br>Constituency : ${esc(b.const)}</td></tr></table>
     <div class="note">The poll will be taken on ${pollHours()}.${isP ? ` Collect material from ${matCollect()} and return it at <b>${esc(T().matDeposit)}</b>.` : ` Report at <b>${esc(T().reportVenue)}</b> for instructions and, after the poll, report to the Observer at <b>${esc(T().matDeposit)}</b>.`}</div>
     ${sigBlock()}
-    ${receipt(`Final Appointment Letter — Receipt (${isP ? 'PCCP' : 'Micro Observer'})`, [`Name :- <b>${esc(o.name)}</b><br>PIN :- <b>${esc(o.pin)}</b>`, `Order No :- <b>${esc(x.orderNo)}</b><br>Contact :- ${esc(o.mobile)}`, `Booth No :- <b>${esc(boothLabel(b))}</b><br>Block :- ${esc(b.block)}`])}
   </div>`;
 }
 function reserveLetterHtml(o, ref, cons) {
@@ -130,7 +126,6 @@ function reserveLetterHtml(o, ref, cons) {
     <tr><td>${officerDetails(o)}</td><td style="vertical-align:middle"><b>Duty :- ${esc(o.duty)}</b><br>Reserve ref :- ${esc(ref)}<br>Constituency :- ${esc(cons)}</td></tr></table>
     <div class="note"><b>IMPORTANT:</b><br>• You must remain available at <b>${esc(T().matCollectVenue || T().reportVenue)}</b> and follow further instructions.<br>• Verify your mobile number and report any discrepancy to the Personnel Cell.</div>
     ${sigBlock()}
-    ${receipt('Final Appointment Letter (Reserve) — Receipt', [`Name :- <b>${esc(o.name)}</b><br>Designation :- ${esc(o.designation)}`, `PIN :- <b>${esc(o.pin)}</b><br>Contact :- ${esc(o.mobile)}`, `Duty :- <b>${esc(o.duty)}</b><br>Ref :- ${esc(ref)}`])}
   </div>`;
 }
 

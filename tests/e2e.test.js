@@ -132,6 +132,17 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   ok(blockProof.bad === 0 && blockProof.good === 12 * 6, `block exclusion proof: ${blockProof.good} ✔, ${blockProof.bad} ✖`);
   ok(errors.length === 0, 'no errors while rendering: ' + errors.join(' | '));
 
+  console.log('3a. Counterfoil receipt only on the 1st letter; column 4 = "P1 authorised in absence of PO"');
+  const rc = await page.evaluate(() => {
+    const txt = fn => { fn(); const t = document.querySelector('#docBody').innerText; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove()); return t; };
+    const first = txt(() => { __MLC.ACT.go('letter1'); __MLC.ACT.previewLetter1(); });
+    const others = { second: txt(() => __MLC.ACT.previewSecond('polling')), secondMo: txt(() => __MLC.ACT.previewSecond('micro')), finalMain: txt(() => __MLC.ACT.finalLetters('polling')), finalPccp: txt(() => __MLC.ACT.finalLetters('pccp')), reserve: txt(() => __MLC.ACT.finalLetters('reserve')) };
+    return { first: /Counterfoil Receipt/.test(first), withReceipt: Object.entries(others).filter(([, t]) => /Counterfoil Receipt|Signature of Officer/.test(t)).map(([k]) => k), col4: /P1 authorised in absence of PO/i.test(others.finalMain), oldCol4: /PO authorised in absence of PrO/i.test(others.finalMain) };
+  });
+  ok(rc.first, '1st letter keeps the counterfoil receipt');
+  ok(rc.withReceipt.length === 0, '2nd and final letters have no counterfoil receipt ' + rc.withReceipt.join(','));
+  ok(rc.col4 && !rc.oldCol4, 'final party letter column 4 reads "P1 authorised in absence of PO"');
+
   console.log('3b. Final party letter shows designation & office and prints one letter per A4 page');
   const fl = await page.evaluate(() => { __MLC.ACT.finalLetters('polling'); const h = document.querySelector('#docBody').innerHTML; document.querySelector('#printArea').innerHTML = h; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
     const S = __MLC.S, p = S.second.parties.find(x => x.partyNo === S.final.polling[S.booths[0].id]);

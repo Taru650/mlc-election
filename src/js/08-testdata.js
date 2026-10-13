@@ -111,7 +111,8 @@ function generateErrorState() {
   o[5].mobile = '98765'; // short mobile
   o[6].homeBlock = 'Piprahee'; o[6].homeBlockCode = ''; // misspelt block, no code to rescue it
   o[8].officeCode = o[9].officeCode = '99999'; o[9].office = 'Some Other Office'; // one code, two names
-  o[10].postingBlockCode = '7777'; // block name with a wrong code
+  const inDist = o.findIndex((x, i) => i > 9 && x.postingBlockCode !== '999999');
+  o[inDist].postingBlockCode = '7777'; // in-district block name with a wrong code
   o[7].homeBlock = '';
   st.booths[0].block = ''; st.booths[0].blockCode = '';
   st.booths[1].const = 'XC';
