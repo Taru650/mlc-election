@@ -60,11 +60,15 @@ function firstLetterHtml(o) {
 }
 
 /* ---------- 2nd letters (booth NOT disclosed) ---------- */
-function secondPartyLetterHtml(p) {
-  const rows = PARTY_ROLES.map(r => { const o = officerByPin(p[r]) || {}; return `<tr><td><b>${esc(DUTY_BY_KEY[r].label)}</b></td><td>${esc(o.name)}</td><td>${esc(o.pin)}</td><td>${esc(o.designation)}, ${esc(o.office)}</td><td>${esc(o.mobile)}</td></tr>`; }).join('');
+/** Tick shown before the member a printed copy belongs to (4-copy distribution sets). */
+const tick = (role, forRole) => (forRole && role === forRole ? '<span class="tick">✔</span> ' : '');
+const COPY_ROLES = ['PRO', 'P1', 'P2', 'P3'];
+function copyLine(forRole) { return forRole ? `<div class="copyfor">Copy ${COPY_ROLES.indexOf(forRole) + 1} of 4 — for ${esc(DUTY_BY_KEY[forRole].label)} <span class="tick">✔</span></div>` : ''; }
+function secondPartyLetterHtml(p, forRole) {
+  const rows = PARTY_ROLES.map(r => { const o = officerByPin(p[r]) || {}; return `<tr><td><b>${esc(DUTY_BY_KEY[r].label)}</b></td><td>${tick(r, forRole)}${esc(o.name)}</td><td>${esc(o.pin)}</td><td>${esc(o.designation)}, ${esc(o.office)}</td><td>${esc(o.mobile)}</td></tr>`; }).join('');
   const pro = officerByPin(p.PRO) || {};
   return `<div class="doc">${annexHead('Order of Second Appointment Letter')}
-    <div class="hdr2"><span>ELECTION URGENT</span><span>PARTY NO :- ${esc(p.partyNo)}</span></div>
+    <div class="hdr2"><span>ELECTION URGENT</span><span>PARTY NO :- ${esc(p.partyNo)}</span></div>${copyLine(forRole)}
     ${rpaPara(`hereby appoint the following officers as a polling party for conducting the ${esc(T().electionTitle)} for <b>${esc(constName(p.const))}</b>.`)}
     <table class="lt"><tr><th>Duty</th><th>Name</th><th>PIN</th><th>Designation &amp; Office</th><th>Contact</th></tr>${rows}</table>
     <div class="note"><b>IMPORTANT:</b><br>1) The poll will be taken on ${pollHours()}.<br>2) Polling materials are to be collected from ${matCollect()} and, after the poll, returned at <b>${esc(T().matDeposit)}</b>.<br>3) The polling station will be notified later through the Final Appointment Letter.</div>
@@ -93,15 +97,15 @@ function desigOffice(o) {
   const parts = [o.designation, o.office].map(str).filter(Boolean);
   return parts.length ? `<div class="dsub">${esc(parts.join(', '))}</div>` : '';
 }
-function finalPartyLetterHtml(b, p) {
+function finalPartyLetterHtml(b, p, forRole) {
   const m = r => officerByPin(p[r]) || {};
   return `<div class="doc">${annexHead('Order of Final Appointment Letter')}
-    <div class="hdr2"><span>ELECTION URGENT</span><span>PARTY NO :- ${esc(p.partyNo)}</span></div>
+    <div class="hdr2"><span>ELECTION URGENT</span><span>PARTY NO :- ${esc(p.partyNo)}</span></div>${copyLine(forRole)}
     <p>In pursuance of sub-section (1) and sub-section (3) of section 26 of the Representation of the People Act, 1951 (43 of 1951), I hereby appoint the officers specified in columns 2 and 3 of the table below as Presiding Officer and Polling Officers respectively for the polling station specified in column 1, for <b>${esc(constName(b.const))}</b>. I also authorise the Polling Officer-1 (P1) specified in column 4 to perform the functions of the Presiding Officer during the unavoidable absence, if any, of the Presiding Officer.</p>
     <table class="lt fl"><tr><th style="width:24%">Polling station no., name &amp; location<div class="c">1</div></th><th style="width:25%">Presiding Officer<div class="c">2</div></th><th style="width:33%">Polling Officers<div class="c">3</div></th><th>P1 authorised in absence of PO<div class="c">4</div></th></tr>
     <tr><td><b>Booth No :</b> ${esc(boothLabel(b))}<br><b>Location :</b> ${esc(b.name)}<br><b>Block :</b> ${esc(b.block)}<br><small>Constituency : ${esc(b.const)}</small></td>
-    <td><b>${esc(m('PRO').name)}</b>${desigOffice(m('PRO'))}<div class="dsub">PIN: ${esc(m('PRO').pin)} · Mob: ${esc(m('PRO').mobile)}</div></td>
-    <td>${['P1', 'P2', 'P3'].map((r, i) => `<div class="po${i ? ' po-next' : ''}">${i + 1}. <b>${esc(m(r).name)}</b> (${r})${desigOffice(m(r))}<div class="dsub">PIN: ${esc(m(r).pin)} · Mob: ${esc(m(r).mobile)}</div></div>`).join('')}</td>
+    <td>${tick('PRO', forRole)}<b>${esc(m('PRO').name)}</b>${desigOffice(m('PRO'))}<div class="dsub">PIN: ${esc(m('PRO').pin)} · Mob: ${esc(m('PRO').mobile)}</div></td>
+    <td>${['P1', 'P2', 'P3'].map((r, i) => `<div class="po${i ? ' po-next' : ''}">${tick(r, forRole)}${i + 1}. <b>${esc(m(r).name)}</b> (${r})${desigOffice(m(r))}<div class="dsub">PIN: ${esc(m(r).pin)} · Mob: ${esc(m(r).mobile)}</div></div>`).join('')}</td>
     <td style="text-align:center;vertical-align:middle"><b>${esc(m('P1').name)}</b><br>(Polling Officer-1)${desigOffice(m('P1'))}</td></tr></table>
     <div class="note">The poll will be taken on ${pollHours()}.<br>The Presiding Officer should collect the polling materials from ${matCollect()} and, after the poll, return them at <b>${esc(T().matDeposit)}</b>.</div>
     ${sigBlock()}
@@ -189,13 +193,14 @@ VIEWS.reports = () => {
     <div class="flow">
       ${card('1st appointment letters', 'Duty + training. Choose training rows on the 1st letter page.', b('go', 'letter1', 'Open 1st letter page', true))}
       ${card('Training attendance', 'Duty-wise, A4 landscape.', b('go', 'training', 'Open training page', true))}
-      ${card('2nd letters — polling parties', 'Booth not disclosed.', b('previewSecond', 'polling', 'Open', sp.polling))}
+      ${card('2nd letters — polling parties', 'Booth not disclosed. Office copy (1 per party) or distribution set (4 per party, ✔ before PrO / P1 / P2 / P3).', b('previewSecond', 'polling', 'Office copy', sp.polling) + b('previewSecond', 'polling4', '4 copies ✔', sp.polling))}
+      ${card('Power vesting list', 'Party-wise Presiding Officer and Polling Officer-1 — PIN, name, designation, office, mobile — for approval of magisterial powers.', b('report', 'powerVesting', 'Open', sp.polling) + b('exportPowerVesting', '', 'Excel', sp.polling))}
       ${card('2nd letters — PCCP', 'Booth not disclosed.', b('previewSecond', 'pccp', 'Open', sp.pccp && S.second.pccp.length))}
       ${card('2nd letters — Micro Observers', 'Booth not disclosed.', b('previewSecond', 'micro', 'Open', sp.micro && S.second.micro.length))}
-      ${card('Final letters — main parties', 'Booth disclosed.', b('finalLetters', 'polling', 'Open', fp.polling))}
+      ${card('Final letters — main parties', 'Booth disclosed. Office copy (1 per booth) or distribution set (4 per booth, ✔ before PrO / P1 / P2 / P3).', b('finalLetters', 'polling', 'Office copy', fp.polling) + b('finalLetters', 'polling4', '4 copies ✔', fp.polling))}
       ${card('Final letters — PCCP / MO', 'Booth disclosed.', b('finalLetters', 'pccp', 'PCCP', fp.pccp && S.second.pccp.length) + b('finalLetters', 'micro', 'Micro Obs.', fp.micro && S.second.micro.length))}
       ${card('Final letters — reserve', 'One letter per reserve officer of each locked part.', b('finalLetters', 'reserve', 'Open', PART_KINDS.some(k => fp[k])))}
-      ${Object.entries(REPORTS).map(([k, [t]]) => card(t, k === 'remaining' ? 'After 2nd randomisation.' : k === 'audit' || k === 'log' ? 'Any time.' : k === 'exempted' ? 'Officers withdrawn, with reasons.' : 'After final randomisation.', b('report', k, 'Open', k === 'audit' || k === 'log' || (k === 'exempted' && Object.keys(S.exempt).length > 0) || (k !== 'exempted' && (k === 'remaining' ? S.second.parties.length > 0 : fin))))).join('')}
+      ${Object.entries(REPORTS).filter(([k]) => k !== 'powerVesting').map(([k, [t]]) => card(t, k === 'remaining' ? 'After 2nd randomisation.' : k === 'audit' || k === 'log' ? 'Any time.' : k === 'exempted' ? 'Officers withdrawn, with reasons.' : 'After final randomisation.', b('report', k, 'Open', k === 'audit' || k === 'log' || (k === 'exempted' && Object.keys(S.exempt).length > 0) || (k !== 'exempted' && (k === 'remaining' ? S.second.parties.length > 0 : fin))))).join('')}
     </div></div>
     <div class="card"><div class="card-head"><h3>Excel exports</h3></div><div class="btn-row">
       <button class="btn" data-act="exportSecond" ${S.second.parties.length ? '' : 'disabled'}>2nd randomisation (Excel)</button>
@@ -204,10 +209,15 @@ VIEWS.reports = () => {
 };
 ACT.report = k => { const r = REPORTS[k]; if (r) openDoc(r[0], r[1]()); };
 ACT.finalLetters = kind => {
-  if (kind !== 'reserve' && !S.parts.final[kind]) return toast(`Lock ${PART_NAME[kind]} in the final randomisation first.`, 'bad');
+  if (kind !== 'reserve' && kind !== 'polling4' && !S.parts.final[kind]) return toast(`Lock ${PART_NAME[kind]} in the final randomisation first.`, 'bad');
   if (kind === 'polling') {
     const html = S.booths.map(b => { const p = finalPartyOf(b); return p ? finalPartyLetterHtml(b, p) : ''; }).join('');
-    return openDoc(`Final Appointment Letters — Main (${Object.keys(S.final.polling).length})`, html);
+    return openDoc(`Final Appointment Letters — Main, office copy (${Object.keys(S.final.polling).length})`, html);
+  }
+  if (kind === 'polling4') {
+    if (!S.parts.final.polling) return toast('Lock Polling parties in the final randomisation first.', 'bad');
+    const html = S.booths.map(b => { const p = finalPartyOf(b); return p ? COPY_ROLES.map(r => finalPartyLetterHtml(b, p, r)).join('') : ''; }).join('');
+    return openDoc(`Final Appointment Letters — 4 copies per party, ✔ PrO / P1 / P2 / P3 (${Object.keys(S.final.polling).length * 4})`, html);
   }
   if (kind === 'pccp' || kind === 'micro') {
     const html = S.booths.map(b => { const x = tagged(kind, b.id); return x ? finalSingleLetterHtml(x, b, kind) : ''; }).join('');
@@ -217,4 +227,27 @@ ACT.finalLetters = kind => {
   if (S.parts.final.polling) reserveParties().forEach(p => PARTY_ROLES.forEach(r => { const o = officerByPin(p[r]); if (o) parts.push(reserveLetterHtml(o, p.partyNo, p.const)); }));
   ['pccp', 'micro'].filter(k => S.parts.final[k]).forEach(k => reserveSingles(k).forEach(x => { const o = officerByPin(x.pin); if (o) parts.push(reserveLetterHtml(o, x.orderNo, x.const)); }));
   openDoc(`Final Appointment Letters — Reserve (${parts.length})`, parts.join(''));
+};
+
+/* ---------- power vesting list (PrO + P1 of every formed party) ---------- */
+function powerVestingRows() {
+  return S.second.parties.slice().sort((a, b) => a.partyNo.localeCompare(b.partyNo, undefined, { numeric: true }))
+    .flatMap(p => ['PRO', 'P1'].map(r => ({ p, r, o: officerByPin(p[r]) || {} })));
+}
+REPORTS.powerVesting = ['Power vesting list — Presiding Officer & Polling Officer-1', () => {
+  if (!S.parts.second.polling) return '<div class="alert info">Lock Polling parties in the 2nd randomisation first.</div>';
+  const rows = powerVestingRows();
+  return regDoc('LIST OF PRESIDING OFFICERS AND POLLING OFFICERS-1 FOR VESTING OF MAGISTERIAL POWERS', `
+    <p class="small">Party-wise list of Presiding Officers and Polling Officers-1 of all formed polling parties (${S.second.parties.length} parties, ${rows.length} officers), submitted for approval.</p>
+    <table class="lt"><tr><th>Sl</th><th>Party No</th><th>Const.</th><th>Post</th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Mobile</th></tr>
+    ${rows.map(({ p, r, o }, i) => `<tr><td>${i + 1}</td>${r === 'PRO' ? `<td rowspan="2"><b>${esc(p.partyNo)}</b></td><td rowspan="2">${esc(p.const)}</td>` : ''}<td>${r === 'PRO' ? 'Presiding Officer' : 'Polling Officer-1'}</td><td><b>${esc(o.pin)}</b></td><td>${esc(o.name)}</td><td>${esc(o.designation)}</td><td>${esc(o.office)}</td><td>${esc(o.mobile)}</td></tr>`).join('')}
+    </table>
+    <div class="sigs" style="margin-top:30px"><div>Place :- ${placeName()}<br>Date :- ${esc(fmtDate(T().letterDate))}</div><div></div><div>${sigHtml()}<b>${esc(T().authSubTitle)}</b><br>${esc(T().district)}</div></div>`);
+}];
+ACT.exportPowerVesting = () => {
+  if (!S.parts.second.polling) return toast('Lock Polling parties in the 2nd randomisation first.', 'bad');
+  const wb = XLSX.utils.book_new();
+  addSheet(wb, 'Power_Vesting', ['Sl', 'Party No', 'Constituency', 'Post', 'PIN', 'Name', 'Designation', 'Office', 'Mobile'],
+    powerVestingRows().map(({ p, r, o }, i) => [i + 1, p.partyNo, p.const, r === 'PRO' ? 'Presiding Officer' : 'Polling Officer-1', o.pin, o.name, o.designation, o.office, o.mobile]), [5, 14, 12, 18, 12, 26, 24, 34, 13]);
+  saveWb(wb, `Power_Vesting_List_${safeName(S.setup.district)}.xlsx`);
 };

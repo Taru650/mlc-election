@@ -80,6 +80,15 @@ exempted (use a reserve); one in an unlocked part can be, and that part is disca
 re-run. Exemptions can be withdrawn (*Restore*), are saved in the project Excel (`Exemptions`
 sheet), and are printed in the **Exemption Register** (print / PDF / Word / Excel).
 
+## Party letters: office copy and 4-copy distribution set
+
+For polling parties, both the 2nd and the final letters can be produced as an **office copy**
+(one letter per party / booth) or a **distribution set** (four copies per party — copy 1 has
+a ✔ before the Presiding Officer, copy 2 before P1, copy 3 before P2, copy 4 before P3, and
+each is marked “Copy n of 4 — for …”). The **Power vesting list** gives, party-wise, the
+Presiding Officer and Polling Officer-1 (PIN, name, designation, office, mobile) for approval
+of magisterial powers (print / PDF / Word / Excel).
+
 ## Letters as PDF and Word
 
 Every letter / report window has **Print / PDF** (choose “Save as PDF” as the printer) and

@@ -34,6 +34,7 @@ function DocxBuilder(landscape) {
 }
 DocxBuilder.prototype.runXml = function (text, cs, brk) {
   const rp = [];
+  if (/[\u2713\u2714]/.test(text)) rp.push('<w:rFonts w:ascii="Segoe UI Symbol" w:hAnsi="Segoe UI Symbol" w:cs="Segoe UI Symbol"/>');
   // element order follows the WordprocessingML schema (Word rejects out-of-order properties)
   if (Number(cs.fontWeight) >= 600 || cs.fontWeight === 'bold') rp.push('<w:b/>');
   if (cs.fontStyle === 'italic') rp.push('<w:i/>');
@@ -91,7 +92,8 @@ DocxBuilder.prototype.paragraph = function (runs, el, alignOverride) {
   if (!runs.length) return '';
   const cs = getComputedStyle(el);
   const align = alignOverride || ({ center: 'center', right: 'right', end: 'right', justify: 'both' }[cs.textAlign] || 'left');
-  const before = Math.round((parseFloat(cs.marginTop) || 0) * DOCX_PX_TWIP), after = Math.round((parseFloat(cs.marginBottom) || 0) * DOCX_PX_TWIP);
+  // spacing must be non-negative in WordprocessingML (negative CSS margins are dropped)
+  const before = Math.max(0, Math.round((parseFloat(cs.marginTop) || 0) * DOCX_PX_TWIP)), after = Math.max(0, Math.round((parseFloat(cs.marginBottom) || 0) * DOCX_PX_TWIP));
   const fs = parseFloat(cs.fontSize) || 14, lh = parseFloat(cs.lineHeight);
   const line = isFinite(lh) && lh > 0 ? Math.round(lh * DOCX_PX_TWIP) : Math.round(fs * 1.2 * DOCX_PX_TWIP);
   let ppr = (this.pendingBreak ? '<w:pageBreakBefore/>' : '') + topBorderXml(cs) + `<w:spacing w:before="${before}" w:after="${after}" w:line="${line}" w:lineRule="atLeast"/><w:jc w:val="${align}"/>`;

@@ -448,7 +448,8 @@ VIEWS.second = () => {
     const bad = runAudit().filter(c => (c.stage === '2nd – ' + PART_STAGE_TAG[kind] || c.stage === '2nd – All') && !c.ok);
     const bar = `<div class="btn-row" style="margin-bottom:10px">
       <button class="btn warn" data-act="runSecond" data-arg="${kind}" ${canRun ? '' : 'disabled'}>${list.length ? 'Re-run' : 'Run'} ${nm} randomisation</button>
-      <button class="btn" data-act="previewSecond" data-arg="${kind}" ${list.length && locked ? '' : 'disabled'} title="Available after this part is locked">2nd letters</button>
+      <button class="btn" data-act="previewSecond" data-arg="${kind}" ${list.length && locked ? '' : 'disabled'} title="Available after this part is locked">2nd letters${kind === 'polling' ? ' (office copy)' : ''}</button>
+      ${kind === 'polling' ? `<button class="btn" data-act="previewSecond" data-arg="polling4" ${list.length && locked ? '' : 'disabled'} title="4 copies per party with ✔ before PrO / P1 / P2 / P3">2nd letters — 4 copies ✔</button><button class="btn" data-act="report" data-arg="powerVesting" ${list.length && locked ? '' : 'disabled'}>Power vesting list</button>` : ''}
       <button class="btn" data-act="exportSecond" ${list.length ? '' : 'disabled'}>Export Excel</button>
       ${ran[kind] ? `<span class="small muted">Last run: ${esc(ran[kind])}</span>` : ''}
       <span class="spacer"></span>${partLockBar('second', kind, ready && list.length && !bad.length)}</div>
@@ -499,8 +500,10 @@ ACT.runSecond = kind => {
   });
 };
 ACT.previewSecond = kind => {
-  if (!S.parts.second[kind]) return toast(`Lock ${PART_NAME[kind]} first — 2nd letters are issued only from a locked randomisation.`, 'bad');
-  if (kind === 'polling') openDoc(`2nd Appointment Letters — Polling Parties (${S.second.parties.length})`, S.second.parties.map(secondPartyLetterHtml).join(''));
+  const base = kind === 'polling4' ? 'polling' : kind;
+  if (!S.parts.second[base]) return toast(`Lock ${PART_NAME[base]} first — 2nd letters are issued only from a locked randomisation.`, 'bad');
+  if (kind === 'polling4') openDoc(`2nd Appointment Letters — 4 copies per party, ✔ PrO / P1 / P2 / P3 (${S.second.parties.length * 4})`, S.second.parties.map(p => COPY_ROLES.map(r => secondPartyLetterHtml(p, r)).join('')).join(''));
+  else if (kind === 'polling') openDoc(`2nd Appointment Letters — Polling Parties, office copy (${S.second.parties.length})`, S.second.parties.map(p => secondPartyLetterHtml(p)).join(''));
   else { const list = S.second[kind]; openDoc(`2nd Appointment Letters — ${kind === 'pccp' ? 'PCCP' : 'Micro Observer'} (${list.length})`, list.map(x => secondSingleLetterHtml(x, kind)).join('')); }
 };
 
@@ -524,7 +527,8 @@ VIEWS.final = () => {
     const bad = runAudit().filter(c => c.stage === 'Final – ' + PART_STAGE_TAG[kind] && !c.ok);
     const bar = `<div class="btn-row" style="margin-bottom:10px">
       <button class="btn bad" data-act="runFinal" data-arg="${kind}" ${secLocked && !locked ? '' : 'disabled'}>${has ? 'Re-run' : 'Run'} ${nm} → booth tagging</button>
-      <button class="btn" data-act="finalLetters" data-arg="${kind}" ${locked ? '' : 'disabled'} title="Available after this part is locked">Final letters</button>
+      <button class="btn" data-act="finalLetters" data-arg="${kind}" ${locked ? '' : 'disabled'} title="Available after this part is locked">Final letters${kind === 'polling' ? ' (office copy)' : ''}</button>
+      ${kind === 'polling' ? `<button class="btn" data-act="finalLetters" data-arg="polling4" ${locked ? '' : 'disabled'} title="4 copies per party with ✔ before PrO / P1 / P2 / P3">Final letters — 4 copies ✔</button>` : ''}
       ${ran[kind] ? `<span class="small muted">Last run: ${esc(ran[kind])}</span>` : ''}
       <span class="spacer"></span>${partLockBar('final', kind, secLocked && finalPartComplete(kind) && !bad.length)}</div>
       ${!secLocked ? `<div class="alert warn">Lock <b>${PART_NAME[kind]}</b> in the 2nd randomisation first. The other parts can be tagged meanwhile.</div>` : ''}

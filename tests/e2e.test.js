@@ -143,6 +143,43 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   ok(rc.withReceipt.length === 0, '2nd and final letters have no counterfoil receipt ' + rc.withReceipt.join(','));
   ok(rc.col4 && !rc.oldCol4, 'final party letter column 4 reads "P1 authorised in absence of PO"');
 
+  console.log('3c. 4-copy distribution sets with ✔ before PrO / P1 / P2 / P3; power vesting list');
+  const four = await page.evaluate(() => {
+    const S = __MLC.S, roles = ['PRO', 'P1', 'P2', 'P3'], r = {};
+    const check = (open, partyOf) => {
+      open(); const docs = [...document.querySelectorAll('#docBody .doc')]; let bad = 0;
+      docs.forEach((d, i) => {
+        const role = roles[i % 4], p = partyOf(Math.floor(i / 4)), o = S.officers.find(x => x.pin === p[role]);
+        const ticks = d.querySelectorAll('.tick:not(.copyfor .tick)');
+        if (ticks.length !== 1) { bad++; return; }
+        const holder = ticks[0].closest('td,div.po'); if (!holder || !holder.innerText.includes(o.name)) bad++;
+        if (!d.querySelector('.copyfor').innerText.includes(`Copy ${i % 4 + 1} of 4`)) bad++;
+      });
+      document.querySelectorAll('#modalRoot .overlay').forEach(x => x.remove());
+      return { n: docs.length, bad };
+    };
+    r.second = check(() => __MLC.ACT.previewSecond('polling4'), i => S.second.parties[i]);
+    const tagged = S.booths.filter(b => S.final.polling[b.id]).map(b => S.second.parties.find(p => p.partyNo === S.final.polling[b.id]));
+    r.final = check(() => __MLC.ACT.finalLetters('polling4'), i => tagged[i]);
+    __MLC.ACT.previewSecond('polling'); r.officeTicks = document.querySelectorAll('#docBody .tick').length; r.officeN = document.querySelectorAll('#docBody .doc').length;
+    document.querySelectorAll('#modalRoot .overlay').forEach(x => x.remove());
+    __MLC.ACT.report('powerVesting'); const t = document.querySelector('#docBody').innerText; document.querySelectorAll('#modalRoot .overlay').forEach(x => x.remove());
+    r.pv = S.second.parties.every(p => [p.PRO, p.P1].every(pin => t.includes(pin)) && ![p.P2, p.P3].some(pin => t.includes(pin)));
+    r.parties = S.second.parties.length; r.booths = tagged.length;
+    return r;
+  });
+  ok(four.second.n === four.parties * 4 && four.second.bad === 0, `2nd letters: ${four.second.n} copies (4 × ${four.parties}), exactly one ✔ on the right member each`);
+  ok(four.final.n === four.booths * 4 && four.final.bad === 0, `final letters: ${four.final.n} copies (4 × ${four.booths}), exactly one ✔ on the right member each`);
+  ok(four.officeTicks === 0 && four.officeN === four.parties, 'office copy: one letter per party, no tick');
+  ok(four.pv, 'power vesting list has PrO and P1 of every party and no P2 / P3');
+  await page.evaluate(() => { __MLC.ACT.finalLetters('polling4'); document.querySelector('#printArea').innerHTML = document.querySelector('#docBody').innerHTML; document.querySelectorAll('#modalRoot .overlay').forEach(x => x.remove()); });
+  await page.emulateMedia({ media: 'print' });
+  const pdf4 = await page.pdf({ preferCSSPageSize: true });
+  await page.emulateMedia({ media: 'screen' });
+  await page.evaluate(() => { document.querySelector('#printArea').innerHTML = ''; });
+  const p4 = (pdf4.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+  ok(p4 === four.booths * 4, `4-copy final letters print as ${p4} A4 pages (expected ${four.booths * 4})`);
+
   console.log('3b. Final party letter shows designation & office and prints one letter per A4 page');
   const fl = await page.evaluate(() => { __MLC.ACT.finalLetters('polling'); const h = document.querySelector('#docBody').innerHTML; document.querySelector('#printArea').innerHTML = h; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
     const S = __MLC.S, p = S.second.parties.find(x => x.partyNo === S.final.polling[S.booths[0].id]);
