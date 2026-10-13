@@ -147,7 +147,7 @@ function buildMeta() {
     if (isExempt(o.pin)) return; // exempted officers never enter the 2nd / final randomisation
     const ok = officeKey(o);
     meta.set(String(o.pin), {
-      o, pin: String(o.pin),
+      o, pin: String(o.pin), fix: fixedConst(o.pin),
       ex: exclusionBlocks(o),
       office: ok || ('__' + o.pin),
       pb: distinctBlockId(blockRef(o.postingBlockCode, o.postingBlock), '__p' + o.pin),
@@ -194,6 +194,10 @@ function pollingFeasibility() {
   const need = plan.reduce((a, p) => a + p.target, 0);
   if (!plan.length) probs.push('No booths found. Complete Booth Entry first.');
   PARTY_ROLES.forEach(r => { if (pools[r].length < need) probs.push(`${DUTY_BY_KEY[r].label}: need ${need} (booths + ${S.setup.reservePct}% reserve), available ${pools[r].length}.`); });
+  plan.forEach(p => PARTY_ROLES.forEach(r => {
+    const can = pools[r].filter(m => !m.fix || m.fix === p.code).length;
+    if (can < p.target) probs.push(`${p.code}: needs ${p.target} ${DUTY_BY_KEY[r].label}(s) but only ${can} are free or already tied to ${p.code} (officers selected for another constituency in a locked randomisation stay there).`);
+  }));
   const byBlock = new Map();
   S.booths.forEach(b => { const ref = boothBlockRef(b), k = blockId(ref); if (!byBlock.has(k)) byBlock.set(k, { name: blockText(b.blockCode, b.block), ref, n: 0 }); byBlock.get(k).n++; });
   byBlock.forEach(v => {
@@ -209,13 +213,13 @@ function pollingFeasibility() {
   return probs;
 }
 
-function pickParty(pools, used, bKey) {
+function pickParty(pools, used, bKey, code) {
   for (let t = 0; t < 60; t++) {
     const ps = { offices: new Set(), pbs: new Set(), hbs: new Set() };
     const chosen = {};
     let ok = true;
     for (const r of PARTY_ROLES) {
-      const cands = pools[r].filter(m => !used.has(m.pin) && mServe(m, bKey) && memberFits(m, ps));
+      const cands = pools[r].filter(m => !used.has(m.pin) && (!m.fix || m.fix === code) && mServe(m, bKey) && memberFits(m, ps));
       if (!cands.length) { ok = false; break; }
       const m = pickRandom(cands);
       chosen[r] = m; ps.offices.add(m.office); ps.pbs.add(m.pb); ps.hbs.add(m.hb);
@@ -244,7 +248,7 @@ function formPollingParties() {
     const used = new Set(), out = [];
     let ok = true;
     for (const slot of order) {
-      const p = pickParty(pools, used, slot.bKey);
+      const p = pickParty(pools, used, slot.bKey, slot.code);
       if (!p) { ok = false; break; }
       PARTY_ROLES.forEach(r => used.add(p[r].pin));
       out.push({ code: slot.code, p });
@@ -267,6 +271,7 @@ function singleFeasibility(kind) {
   const role = kind === 'pccp' ? 'PM' : 'MO';
   const need = plan.reduce((a, p) => a + p.target, 0);
   if (pools[role].length < need) probs.push(`${DUTY_BY_KEY[role].label}: need ${need} (required + ${S.setup.reservePct}% reserve), available ${pools[role].length}.`);
+  plan.forEach(p => { const can = pools[role].filter(m => !m.fix || m.fix === p.code).length; if (can < p.target) probs.push(`${p.code}: needs ${p.target} ${DUTY_BY_KEY[role].label}(s) but only ${can} are free or already tied to ${p.code}.`); });
   plan.forEach(p => { if (p.required > p.booths) probs.push(`${p.code}: required ${p.required} but only ${p.booths} booths.`); });
   probs.push(...singleBlockShortages(kind, pools[role], true));
   return probs;
@@ -300,13 +305,13 @@ function formSingles(kind) {
       const booths = shuffle(boothsOf(p.code)).slice(0, p.required);
       for (const b of booths) {
         const bk = boothBlockRef(b);
-        const m = pickRandom(pools[role].filter(x => !used.has(x.pin) && mServe(x, bk)));
+        const m = pickRandom(pools[role].filter(x => !used.has(x.pin) && (!x.fix || x.fix === p.code) && mServe(x, bk)));
         if (!m) { ok = false; break; }
         used.add(m.pin); out.push({ code: p.code, pin: m.pin });
       }
       if (!ok) break;
       for (let i = 0; i < p.target - p.required; i++) {
-        const m = pickRandom(pools[role].filter(x => !used.has(x.pin)));
+        const m = pickRandom(pools[role].filter(x => !used.has(x.pin) && (!x.fix || x.fix === p.code)));
         if (!m) { ok = false; break; }
         used.add(m.pin); out.push({ code: p.code, pin: m.pin });
       }
@@ -421,6 +426,9 @@ function runAudit() {
     const seen = new Map(), bad = [];
     all.forEach(([pin, where]) => { if (seen.has(pin)) bad.push(`PIN ${pin} used in ${seen.get(pin)} and ${where}`); else seen.set(pin, where); });
     add('2nd – All', 'No officer is used more than once', bad, all.length);
+    const sel = selectedConstByPin(), wrong = [];
+    sel.forEach((v, pin) => { const f = fixedConst(pin); if (f && f !== v.code) wrong.push(`PIN ${pin} was locked in ${f} earlier but is now in ${v.code} (${v.where})`); });
+    add('2nd – All', 'Officer stays in the constituency of an earlier locked selection (TC ↔ GC never interchanged)', wrong, sel.size);
     const ex = all.filter(([pin]) => isExempt(pin)).map(([pin, where]) => `Exempted PIN ${pin} selected in ${where}`);
     add('2nd – All', 'No exempted officer is selected', ex, all.length);
   }
@@ -436,7 +444,7 @@ function runAudit() {
       if (used.has(pno)) bad3.push(`${pno} tagged to two booths`); used.set(pno, bid);
       PARTY_ROLES.forEach(r => { const o = offOf(p[r]); if (o && !canServeAt(o, b)) bad2.push(`${pno} at booth ${b.const}-${b.no} (${b.block}): ${DUTY_BY_KEY[r].short} ${o.name} has home "${blockText(o.homeBlockCode, o.homeBlock)}" / posting "${blockText(o.postingBlockCode, o.postingBlock)}"`); });
     });
-    add('Final – Polling', 'Every booth gets exactly one party of its constituency', bad1, S.booths.length);
+    add('Final – Polling', 'Every booth gets exactly one party of its constituency (TC party → TC booth, GC party → GC booth)', bad1, S.booths.length);
     add('Final – Polling', 'No member\'s home block or posting block = booth block', bad2, fp.length * 4);
     add('Final – Polling', 'No party tagged to more than one booth', bad3, fp.length);
   }
@@ -452,7 +460,7 @@ function runAudit() {
       if (used.has(x.orderNo)) bad1.push(`${x.orderNo} tagged twice`); used.add(x.orderNo);
       const o = offOf(x.pin); if (o && !canServeAt(o, b)) bad2.push(`${x.orderNo} ${o.name} at booth ${b.const}-${b.no} (${b.block}): home "${blockText(o.homeBlockCode, o.homeBlock)}" / posting "${blockText(o.postingBlockCode, o.postingBlock)}"`);
     });
-    add(nm, 'Tagged count and constituency correct', bad1, ids.length);
+    add(nm, 'Tagged count correct; officer only at a booth of the constituency he/she was selected for', bad1, ids.length);
     add(nm, 'Home block / posting block ≠ booth block', bad2, ids.length);
   });
   return checks;

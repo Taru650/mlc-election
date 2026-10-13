@@ -251,6 +251,7 @@ function buildProjectWorkbook() {
     addSheet(wb, 'Signature', ['Part', 'Data'], chunks.map((c, i) => [i + 1, c]), [6, 80]);
   }
   addSheet(wb, 'Exemptions', EXEMPT_HEAD, exemptRows(), [12, 24, 22, 16, 50, 26, 12, 20]);
+  addSheet(wb, 'Constituency_Fixed', ['PIN', 'Constituency'], Object.entries(S.constFix), [12, 14]);
   addSheet(wb, 'Audit_Log', ['Time', 'Action'], S.log.map(l => [l.time, l.action]), [20, 100]);
   return wb;
 }
@@ -292,6 +293,7 @@ function parseProjectWorkbook(wb) {
     if (!sawParts) st.parts = null; // older file: hydrate() derives part locks from the whole-stage locks
     const sig = sheetObjects(findSheet(wb, 'Signature')).sort((a, b) => Number(a.part) - Number(b.part)).map(r => str(r.data)).join('');
     if (sig.startsWith('data:image/')) st.setup.signature = sig;
+    sheetObjects(findSheet(wb, 'Constituency_Fixed')).forEach(r => { const pin = str(r.pin).replace(/\.0$/, ''); if (pin && str(r.constituency)) st.constFix[pin] = str(r.constituency).toUpperCase(); });
     sheetObjects(findSheet(wb, 'Exemptions')).forEach(r => { const pin = str(r.pin).replace(/\.0$/, ''); if (pin && str(r.reason)) st.exempt[pin] = { category: str(r.category) || 'Other', reason: str(r.reason), orderRef: str(r.orderref), date: parseDateAny(r.date), at: str(r.recordedat) }; });
     st.log = sheetObjects(findSheet(wb, 'Audit_Log')).map(r => ({ time: str(r.time), action: str(r.action) })).filter(l => l.action);
   } finally { S = prevS; }

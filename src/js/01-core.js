@@ -66,6 +66,7 @@ function defaultState() {
     ],
     training: emptyTraining(),
     officers: [],
+    constFix: {}, // PIN -> constituency code, recorded when a 2nd-randomisation part is locked; never changes afterwards
     exempt: {}, // PIN -> { category, reason, orderRef, date, at } — kept out of 2nd and final randomisation
     booths: [],
     second: { parties: [], pccp: [], micro: [], ran: {} },
@@ -194,6 +195,17 @@ function constByCode(code) { return S.constituencies.find(c => c.code === code) 
 function constName(code) { const c = constByCode(code); return c ? (c.name || c.code) : code; }
 function dutyKeyFromLabel(label) { const d = DUTIES.find(x => x.label === label); return d ? d.key : ''; }
 function officersOfDuty(key) { const lbl = DUTY_BY_KEY[key].label; return S.officers.filter(o => o.duty === lbl); }
+/** Constituency an officer is permanently tied to (from an earlier locked selection), or '' if free.
+ *  A fix to a constituency code that no longer exists in Setup is ignored. */
+function fixedConst(pin) { const c = S.constFix && S.constFix[String(pin)]; return c && S.constituencies.some(x => x.code === c) ? c : ''; }
+/** Constituency in which each selected PIN currently sits (parties, PCCP, MO). */
+function selectedConstByPin() {
+  const m = new Map();
+  S.second.parties.forEach(p => PARTY_ROLES.forEach(r => m.set(String(p[r]), { code: p.const, where: p.partyNo })));
+  S.second.pccp.forEach(x => m.set(String(x.pin), { code: x.const, where: x.orderNo }));
+  S.second.micro.forEach(x => m.set(String(x.pin), { code: x.const, where: x.orderNo }));
+  return m;
+}
 function isExempt(pin) { return !!(S.exempt && S.exempt[String(pin)]); }
 /** Officers of a duty who are available for randomisation (not exempted). */
 function availableOfDuty(key) { return officersOfDuty(key).filter(o => !isExempt(o.pin)); }
@@ -279,6 +291,7 @@ function hydrate(st) {
   out.booths = (out.booths || []).map(b => Object.assign(blankBooth(), b));
   out.log = out.log || [];
   out.exempt = (st && st.exempt && typeof st.exempt === 'object') ? st.exempt : {};
+  out.constFix = (st && st.constFix && typeof st.constFix === 'object') ? st.constFix : {};
   return out;
 }
 function addLog(action) { S.log.push({ time: nowStamp(), action }); if (S.log.length > 2000) S.log.shift(); }

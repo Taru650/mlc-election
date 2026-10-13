@@ -475,6 +475,7 @@ VIEWS.second = () => {
   </div>
   <div class="card">
     ${SECRECY_NOTE}
+    ${Object.keys(S.constFix).length ? `<div class="alert info">🔗 ${Object.keys(S.constFix).length} officers are tied to the constituency of an earlier locked selection (TC stays TC, GC stays GC) — re-runs keep them there.</div>` : ''}
     <div class="subtabs">${[['polling', tabLabel('polling', S.second.parties.length)], ['pccp', tabLabel('pccp', S.second.pccp.length)], ['micro', tabLabel('micro', S.second.micro.length)], ['audit', 'Rule verification']].map(([k, l]) => `<button class="${sub === k ? 'active' : ''}" data-act="sub" data-arg="second:${k}">${esc(l)}</button>`).join('')}</div>
     ${body}
   </div>`;
@@ -594,6 +595,10 @@ ACT.lockPart = arg => {
   }
   if (e.length) return showErrors(`Cannot lock ${PART_NAME[kind]}`, e);
   S.parts[stage][kind] = true;
+  if (stage === 'second') { // tie every officer of this part to its constituency for good (TC stays TC, GC stays GC)
+    const list = kind === 'polling' ? S.second.parties.flatMap(p => PARTY_ROLES.map(r => [p[r], p.const])) : S.second[kind].map(x => [x.pin, x.const]);
+    list.forEach(([pin, code]) => { if (!S.constFix[String(pin)]) S.constFix[String(pin)] = code; });
+  }
   addLog(`Locked: ${stage === 'second' ? '2nd' : 'final'} randomisation — ${PART_NAME[kind]}`);
   persist(); render();
   toast(`${PART_NAME[kind]} locked (${stage === 'second' ? '2nd' : 'final'} randomisation). ${partsLockedCount(stage)} of ${partsApplicableCount()} parts locked.`, 'ok');

@@ -51,6 +51,11 @@ computer. The project Excel file is the real backup.
   compared loosely (case, spaces, punctuation and the word “block” ignored). Codes ignore
   spaces and leading zeros (`0101` = `101`). The tool warns when one name appears with two
   codes (likely a wrong code) or one code with two spellings (harmless; code wins).
+* **TC and GC never mix:** every party / PCCP / Micro Observer belongs to one constituency and is
+  only tagged to booths of that constituency. When a 2nd-randomisation part is **locked**, each
+  of its officers is permanently tied to that constituency; if the part is later unlocked and
+  re-run, those officers can be selected again only for the same constituency. Saved in the
+  project Excel (`Constituency_Fixed`) and verified by a rule check.
 * **Out-of-district blocks:** a home or posting block given as `999999` (or `999`, `Others`,
   `Out of District` … — the list is editable in Setup) is treated as outside the district and
   excludes no booth. An officer living outside the district can therefore be tagged in any

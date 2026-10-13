@@ -544,6 +544,72 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   ok(secrecy.n === 0, 'no name / office / designation / mobile on 2nd or final randomisation screens ' + secrecy.leaks.join(' | '));
   ok(secrecy.letterHasName, 'final letters still show full name and designation');
 
+  console.log('7h. TC / GC separation — an officer is never in both, and never switches after a lock');
+  const tg = await page.evaluate(() => {
+    const r = { runs: 0, mixed: 0, partyBooth: 0, singleBooth: 0 };
+    // independent check over many full randomisations
+    for (const [key, n] of [['small', 100], ['large', 10]]) {
+      __MLC.S = __MLC.generateTestState(key); const S = __MLC.S;
+      for (let i = 0; i < n; i++) {
+        S.constFix = {};
+        S.second.parties = __MLC.formPollingParties().parties; S.second.pccp = __MLC.formSingles('pccp').items; S.second.micro = __MLC.formSingles('micro').items;
+        S.final.polling = __MLC.finalPolling(); S.final.pccp = __MLC.finalSingles('pccp'); S.final.micro = __MLC.finalSingles('micro');
+        const seen = new Map(); const note = (pin, c) => { if (!seen.has(pin)) seen.set(pin, new Set()); seen.get(pin).add(c); };
+        S.second.parties.forEach(p => ['PRO', 'P1', 'P2', 'P3'].forEach(k => note(p[k], p.const)));
+        ['pccp', 'micro'].forEach(k => S.second[k].forEach(x => note(x.pin, x.const)));
+        S.booths.forEach(b => {
+          const p = S.second.parties.find(x => x.partyNo === S.final.polling[b.id]);
+          if (p.const !== b.const) r.partyBooth++;
+          ['PRO', 'P1', 'P2', 'P3'].forEach(k => note(p[k], b.const));
+          ['pccp', 'micro'].forEach(k => { const x = S.second[k].find(i => i.orderNo === S.final[k][b.id]); if (x) { if (x.const !== b.const) r.singleBooth++; note(x.pin, b.const); } });
+        });
+        seen.forEach(set => { if (set.size > 1) r.mixed++; });
+        r.runs++;
+      }
+    }
+    // lock → unlock → re-run: officers already locked keep their constituency
+    __MLC.S = __MLC.generateTestState('small'); const S = __MLC.S;
+    ['setup', 'training', 'officers', 'booths'].forEach(m => { S.locks[m] = true; });
+    S.second.parties = __MLC.formPollingParties().parties; S.second.pccp = __MLC.formSingles('pccp').items; S.second.micro = __MLC.formSingles('micro').items;
+    ['polling', 'pccp', 'micro'].forEach(k => __MLC.ACT.lockPart('second:' + k));
+    const locked = {}; S.second.parties.forEach(p => ['PRO', 'P1', 'P2', 'P3'].forEach(k => { locked[p[k]] = p.const; })); ['pccp', 'micro'].forEach(k => S.second[k].forEach(x => { locked[x.pin] = x.const; }));
+    r.fixRecorded = Object.keys(locked).every(pin => S.constFix[pin] === locked[pin]);
+    ['polling', 'pccp', 'micro'].forEach(k => __MLC.ACT.unlockPart('second:' + k));
+    let switched = 0, reselected = 0; const sets = new Set();
+    for (let i = 0; i < 40; i++) {
+      S.second.parties = __MLC.formPollingParties().parties; S.second.pccp = __MLC.formSingles('pccp').items; S.second.micro = __MLC.formSingles('micro').items;
+      sets.add(S.second.parties.map(p => p.PRO).join());
+      const check = (pin, c) => { if (locked[pin]) { reselected++; if (locked[pin] !== c) switched++; } };
+      S.second.parties.forEach(p => ['PRO', 'P1', 'P2', 'P3'].forEach(k => check(p[k], p.const)));
+      ['pccp', 'micro'].forEach(k => S.second[k].forEach(x => check(x.pin, x.const)));
+    }
+    r.switched = switched; r.reselected = reselected; r.variety = sets.size;
+    r.auditOk = __MLC.runAudit().filter(c => c.stage.startsWith('2nd')).every(c => c.ok);
+    // tamper: move a locked TC party to GC → rule check fails
+    const p0 = S.second.parties.find(p => p.const === 'TC'); p0.const = 'GC';
+    r.tamperCaught = __MLC.runAudit().some(c => /TC ↔ GC/.test(c.rule) && !c.ok);
+    p0.const = 'TC';
+    // tamper final: tag a GC party to a TC booth → final rule fails
+    S.final.polling = __MLC.finalPolling();
+    const tcBooth = S.booths.find(b => b.const === 'TC'), gcParty = S.second.parties.find(p => p.const === 'GC');
+    const saved = S.final.polling[tcBooth.id]; S.final.polling[tcBooth.id] = gcParty.partyNo;
+    r.finalTamperCaught = __MLC.runAudit().some(c => c.stage === 'Final – Polling' && /constituency/.test(c.rule) && !c.ok);
+    S.final.polling[tcBooth.id] = saved;
+    // Excel round trip keeps the ties
+    const buf = XLSX.write(__MLC.buildProjectWorkbook(), { bookType: 'xlsx', type: 'array' });
+    const st = __MLC.parseProjectWorkbook(XLSX.read(new Uint8Array(buf), { type: 'array' }));
+    r.roundTrip = JSON.stringify(st.constFix) === JSON.stringify(S.constFix) && Object.keys(st.constFix).length === Object.keys(locked).length;
+    return r;
+  });
+  ok(tg.mixed === 0, `${tg.runs} full randomisations: no officer ever in both TC and GC (2nd selection + final booth)`);
+  ok(tg.partyBooth === 0 && tg.singleBooth === 0, 'TC parties / PCCP / MO only at TC booths, GC only at GC booths');
+  ok(tg.fixRecorded, 'locking a 2nd-randomisation part ties each officer to its constituency');
+  ok(tg.switched === 0 && tg.reselected > 100 && tg.variety > 30, `after unlock, 40 re-runs: ${tg.reselected} re-selections of locked officers, ${tg.switched} switched constituency (results still random: ${tg.variety} different sets)`);
+  ok(tg.auditOk, 'rule checks pass after re-runs');
+  ok(tg.tamperCaught, 'rule check catches a locked officer moved from TC to GC');
+  ok(tg.finalTamperCaught, 'rule check catches a GC party tagged to a TC booth');
+  ok(tg.roundTrip, 'constituency ties survive project Excel save & open');
+
   console.log('8. Validation catches bad data');
   const v = await page.evaluate(() => { __MLC.S = __MLC.generateErrorState(); return { o: __MLC.validateOfficers().errors, ow: __MLC.validateOfficers().warnings, b: __MLC.validateBooths().errors }; });
   ok(v.o.some(e => /duplicate PIN/.test(e)), 'duplicate PIN'); ok(v.o.some(e => /posting block \(name or code\) missing/.test(e)), 'missing posting block');
