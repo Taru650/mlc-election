@@ -65,7 +65,7 @@ function validateTraining() {
 function validateOfficers() {
   const errors = [], warnings = [], rowIssues = new Map();
   const seen = new Map();
-  const boothBlocks = new Set(S.booths.map(b => blockKey(b.block)).filter(Boolean));
+  const boothRefs = S.booths.map(boothBlockRef).filter(r => r.c || r.n);
   const add = (i, level, msg) => {
     const r = rowIssues.get(i) || { level: 'warn', msgs: [] };
     if (level === 'err') r.level = 'err';
@@ -78,17 +78,19 @@ function validateOfficers() {
     else seen.set(String(o.pin), i);
     if (!str(o.name)) { add(i, 'err', 'Name missing'); errors.push(`${tag}: name missing.`); }
     if (!DUTIES.some(d => d.label === o.duty)) { add(i, 'err', 'Duty not recognised'); errors.push(`${tag}: duty "${o.duty || ''}" not recognised.`); }
-    if (!str(o.postingBlock)) { add(i, 'err', 'Posting block missing'); errors.push(`${tag}: posting block missing.`); }
-    if (!str(o.homeBlock)) { add(i, 'warn', 'Home block missing'); warnings.push(`${tag}: home block missing — only posting block will be excluded.`); }
-    if (S.setup.ruleDistinctOffice && !str(o.office)) { add(i, 'err', 'Office missing'); errors.push(`${tag}: office name missing (needed for the different-office rule).`); }
+    if (!str(o.postingBlock) && !str(o.postingBlockCode)) { add(i, 'err', 'Posting block missing'); errors.push(`${tag}: posting block (name or code) missing.`); }
+    if (!str(o.homeBlock) && !str(o.homeBlockCode)) { add(i, 'warn', 'Home block missing'); warnings.push(`${tag}: home block (name or code) missing — only posting block will be excluded.`); }
+    if (S.setup.ruleDistinctOffice && !str(o.office) && !str(o.officeCode)) { add(i, 'err', 'Office missing'); errors.push(`${tag}: office name / office code missing (needed for the different-office rule).`); }
     const mob = str(o.mobile).replace(/\D/g, '');
     if (mob && mob.length !== 10) { add(i, 'warn', 'Mobile not 10 digits'); warnings.push(`${tag}: mobile "${o.mobile}" is not 10 digits.`); }
-    if (boothBlocks.size) {
-      [['home', o.homeBlock], ['posting', o.postingBlock]].forEach(([k, v]) => {
-        if (str(v) && !boothBlocks.has(blockKey(v))) { add(i, 'warn', `${k} block not in booth list`); warnings.push(`${tag}: ${k} block "${v}" does not match any booth block — check spelling.`); }
+    if (boothRefs.length) {
+      [['home', o.homeBlockCode, o.homeBlock], ['posting', o.postingBlockCode, o.postingBlock]].forEach(([k, c, n]) => {
+        const r = blockRef(c, n);
+        if ((r.c || r.n) && !boothRefs.some(br => sameBlock(r, br))) { add(i, 'warn', `${k} block not in booth list`); warnings.push(`${tag}: ${k} block "${blockText(c, n)}" does not match any booth block — check spelling / code.`); }
       });
     }
   });
+  warnings.push(...codeConsistencyWarnings());
   return { errors, warnings, rowIssues };
 }
 
@@ -100,7 +102,7 @@ function validateBooths() {
   S.booths.forEach((b, i) => {
     const tag = `Row ${i + 1} (booth ${b.no || '?'})`;
     if (!str(b.no)) { add(i, 'err', 'Booth no missing'); errors.push(`${tag}: booth number missing.`); }
-    if (!str(b.block)) { add(i, 'err', 'Block missing'); errors.push(`${tag}: block missing (needed for home/posting block exclusion).`); }
+    if (!str(b.block) && !str(b.blockCode)) { add(i, 'err', 'Block missing'); errors.push(`${tag}: block name or block code missing (needed for home/posting block exclusion).`); }
     if (!codes.has(b.const)) { add(i, 'err', 'Unknown constituency'); errors.push(`${tag}: constituency "${b.const}" is not defined in Setup.`); }
     const k = b.const + '|' + str(b.no).toUpperCase();
     if (seen.has(k)) { add(i, 'err', 'Duplicate booth'); errors.push(`${tag}: booth ${b.no} repeated in ${b.const} (row ${seen.get(k) + 1}).`); } else seen.set(k, i);
@@ -114,6 +116,26 @@ function validateBooths() {
   return { errors, warnings, rowIssues };
 }
 
+/** Flags codes that look like clerical mistakes. Codes always win over names in the randomisation, so:
+ *  - one name with two codes  → treated as two different offices/blocks (probably a wrong code);
+ *  - one code with two names  → treated as one office/block (spelling variants — harmless, listed for information). */
+function codeConsistencyWarnings() {
+  const w = [];
+  const check = (what, entries) => {
+    const byName = new Map(), byCode = new Map();
+    entries.forEach(([code, name]) => {
+      const c = codeKey(code), n = normText(name); if (!c || !n) return;
+      if (!byName.has(n)) byName.set(n, { label: str(name), codes: new Set() }); byName.get(n).codes.add(c);
+      if (!byCode.has(c)) byCode.set(c, { label: str(code), names: new Set() }); byCode.get(c).names.add(str(name));
+    });
+    byName.forEach(v => { if (v.codes.size > 1) w.push(`${what} "${v.label}" appears with different codes (${[...v.codes].join(', ')}) — treated as DIFFERENT ${what.toLowerCase()}s. Check for a wrong code.`); });
+    byCode.forEach(v => { const ns = [...new Set([...v.names].map(x => normText(x)))]; if (ns.length > 1) w.push(`${what} code ${v.label} has different spellings (${[...v.names].slice(0, 4).join(' / ')}) — treated as ONE ${what.toLowerCase()} (code wins).`); });
+  };
+  check('Office', S.officers.map(o => [o.officeCode, o.office]));
+  check('Block', S.officers.flatMap(o => [[o.homeBlockCode, o.homeBlock], [o.postingBlockCode, o.postingBlock]]).concat(S.booths.map(b => [b.blockCode, b.block])));
+  return w;
+}
+
 /* ---------------- engine helpers ---------------- */
 function buildMeta() {
   const meta = new Map();
@@ -123,8 +145,8 @@ function buildMeta() {
       o, pin: String(o.pin),
       ex: exclusionBlocks(o),
       office: ok || ('__' + o.pin),
-      pb: blockKey(o.postingBlock) || ('__p' + o.pin),
-      hb: blockKey(o.homeBlock) || ('__h' + o.pin),
+      pb: blockId(blockRef(o.postingBlockCode, o.postingBlock)) || ('__p' + o.pin),
+      hb: blockId(blockRef(o.homeBlockCode, o.homeBlock)) || ('__h' + o.pin),
     });
   });
   return meta;
@@ -141,7 +163,8 @@ function memberFits(m, partyState) {
   if (S.setup.ruleDistinctHomeBlock && partyState.hbs.has(m.hb)) return false;
   return true;
 }
-function mServe(m, bKey) { return !bKey || !m.ex.has(bKey); }
+/** Can this officer (meta) serve at a booth with block reference bRef? (null = no booth / reserve) */
+function mServe(m, bRef) { return !bRef || !m.ex.some(r => sameBlock(r, bRef)); }
 
 function pollingPlan() {
   const plan = [];
@@ -167,10 +190,10 @@ function pollingFeasibility() {
   if (!plan.length) probs.push('No booths found. Complete Booth Entry first.');
   PARTY_ROLES.forEach(r => { if (pools[r].length < need) probs.push(`${DUTY_BY_KEY[r].label}: need ${need} (booths + ${S.setup.reservePct}% reserve), available ${pools[r].length}.`); });
   const byBlock = new Map();
-  S.booths.forEach(b => { const k = blockKey(b.block); byBlock.set(k, (byBlock.get(k) || { name: b.block, n: 0 })); byBlock.get(k).n++; });
-  byBlock.forEach((v, k) => {
+  S.booths.forEach(b => { const ref = boothBlockRef(b), k = blockId(ref); if (!byBlock.has(k)) byBlock.set(k, { name: blockText(b.blockCode, b.block), ref, n: 0 }); byBlock.get(k).n++; });
+  byBlock.forEach(v => {
     PARTY_ROLES.forEach(r => {
-      const elig = pools[r].filter(m => !m.ex.has(k)).length;
+      const elig = pools[r].filter(m => mServe(m, v.ref)).length;
       if (elig < v.n) probs.push(`Block "${v.name}" has ${v.n} booth(s) but only ${elig} ${DUTY_BY_KEY[r].label}(s) whose home & posting block are outside it.`);
     });
   });
@@ -204,8 +227,8 @@ function formPollingParties() {
   const meta = buildMeta(), pools = poolsByRole(meta), plan = pollingPlan();
   const mainSlots = [], reserveSlots = [];
   plan.forEach(p => {
-    boothsOf(p.code).forEach(b => mainSlots.push({ code: p.code, bKey: blockKey(b.block) }));
-    for (let i = 0; i < p.target - p.booths; i++) reserveSlots.push({ code: p.code, bKey: '' });
+    boothsOf(p.code).forEach(b => mainSlots.push({ code: p.code, bKey: boothBlockRef(b) }));
+    for (let i = 0; i < p.target - p.booths; i++) reserveSlots.push({ code: p.code, bKey: null });
   });
   const difficulty = s => PARTY_ROLES.reduce((a, r) => a + pools[r].filter(m => mServe(m, s.bKey)).length, 0);
   const MAX = 400;
@@ -248,10 +271,10 @@ function singleFeasibility(kind) {
 function singleBlockShortages(kind, pool, strict) {
   const role = kind === 'pccp' ? 'PM' : 'MO', out = [], byBlock = new Map();
   singlePlan(kind).filter(p => !strict || p.required >= p.booths).forEach(p => boothsOf(p.code).forEach(b => {
-    const k = blockKey(b.block); if (!byBlock.has(k)) byBlock.set(k, { name: b.block, n: 0 }); byBlock.get(k).n++;
+    const ref = boothBlockRef(b), k = blockId(ref); if (!byBlock.has(k)) byBlock.set(k, { name: blockText(b.blockCode, b.block), ref, n: 0 }); byBlock.get(k).n++;
   }));
-  byBlock.forEach((v, k) => {
-    const elig = pool.filter(m => !m.ex.has(k)).length;
+  byBlock.forEach(v => {
+    const elig = pool.filter(m => mServe(m, v.ref)).length;
     if (elig < v.n) out.push(`Block "${v.name}" has ${v.n} booth(s) needing a ${DUTY_BY_KEY[role].label} but only ${elig} whose home & posting block are outside it.`);
   });
   return out;
@@ -271,7 +294,7 @@ function formSingles(kind) {
     for (const p of plan) {
       const booths = shuffle(boothsOf(p.code)).slice(0, p.required);
       for (const b of booths) {
-        const bk = blockKey(b.block);
+        const bk = boothBlockRef(b);
         const m = pickRandom(pools[role].filter(x => !used.has(x.pin) && mServe(x, bk)));
         if (!m) { ok = false; break; }
         used.add(m.pin); out.push({ code: p.code, pin: m.pin });
@@ -367,12 +390,12 @@ function runAudit() {
     }
     if (S.setup.ruleDistinctPostingBlock) {
       const b4 = [];
-      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => blockKey(offOf(p[r])?.postingBlock)); if (new Set(ks).size !== ks.length) b4.push(`${p.partyNo}: repeated posting block`); });
+      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => { const o = offOf(p[r]) || {}; return blockId(blockRef(o.postingBlockCode, o.postingBlock)); }); if (new Set(ks).size !== ks.length) b4.push(`${p.partyNo}: repeated posting block`); });
       add('2nd – Polling', 'All 4 members have different posting blocks', b4, sec.parties.length);
     }
     if (S.setup.ruleDistinctHomeBlock) {
       const b5 = [];
-      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => blockKey(offOf(p[r])?.homeBlock)); if (new Set(ks).size !== ks.length) b5.push(`${p.partyNo}: repeated home block`); });
+      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => { const o = offOf(p[r]) || {}; return blockId(blockRef(o.homeBlockCode, o.homeBlock)); }); if (new Set(ks).size !== ks.length) b5.push(`${p.partyNo}: repeated home block`); });
       add('2nd – Polling', 'All 4 members have different home blocks', b5, sec.parties.length);
     }
   }
@@ -404,7 +427,7 @@ function runAudit() {
       if (!b || !p) { bad1.push(`Tag ${bid} → ${pno} refers to missing booth/party`); return; }
       if (p.const !== b.const) bad1.push(`${pno} (${p.const}) tagged to ${b.const} booth ${b.no}`);
       if (used.has(pno)) bad3.push(`${pno} tagged to two booths`); used.set(pno, bid);
-      PARTY_ROLES.forEach(r => { const o = offOf(p[r]); if (o && !canServeAt(o, b)) bad2.push(`${pno} at booth ${b.const}-${b.no} (${b.block}): ${DUTY_BY_KEY[r].short} ${o.name} has home "${o.homeBlock}" / posting "${o.postingBlock}"`); });
+      PARTY_ROLES.forEach(r => { const o = offOf(p[r]); if (o && !canServeAt(o, b)) bad2.push(`${pno} at booth ${b.const}-${b.no} (${b.block}): ${DUTY_BY_KEY[r].short} ${o.name} has home "${blockText(o.homeBlockCode, o.homeBlock)}" / posting "${blockText(o.postingBlockCode, o.postingBlock)}"`); });
     });
     add('Final – Polling', 'Every booth gets exactly one party of its constituency', bad1, S.booths.length);
     add('Final – Polling', 'No member\'s home block or posting block = booth block', bad2, fp.length * 4);
@@ -420,7 +443,7 @@ function runAudit() {
       if (!b || !x) { bad1.push(`Tag ${bid} → ${tags[bid]} refers to missing booth/officer`); return; }
       if (x.const !== b.const) bad1.push(`${x.orderNo} (${x.const}) tagged to ${b.const} booth ${b.no}`);
       if (used.has(x.orderNo)) bad1.push(`${x.orderNo} tagged twice`); used.add(x.orderNo);
-      const o = offOf(x.pin); if (o && !canServeAt(o, b)) bad2.push(`${x.orderNo} ${o.name} at booth ${b.const}-${b.no} (${b.block}): home "${o.homeBlock}" / posting "${o.postingBlock}"`);
+      const o = offOf(x.pin); if (o && !canServeAt(o, b)) bad2.push(`${x.orderNo} ${o.name} at booth ${b.const}-${b.no} (${b.block}): home "${blockText(o.homeBlockCode, o.homeBlock)}" / posting "${blockText(o.postingBlockCode, o.postingBlock)}"`);
     });
     add(nm, 'Tagged count and constituency correct', bad1, ids.length);
     add(nm, 'Home block / posting block ≠ booth block', bad2, ids.length);

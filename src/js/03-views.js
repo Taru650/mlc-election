@@ -156,9 +156,9 @@ VIEWS.setup = () => {
   <div class="card">
     <h3>Randomisation rules</h3>
     <div class="grid g2">
-      <div class="alert info span2" style="margin:0"><b>Always applied:</b> no officer (PrO, P1, P2, P3, PCCP, Micro Observer) is tagged to a booth located in his/her <b>home block</b> or <b>posting block</b>.</div>
+      <div class="alert info span2" style="margin:0"><b>Always applied:</b> no officer (PrO, P1, P2, P3, PCCP, Micro Observer) is tagged to a booth located in his/her <b>home block</b> or <b>posting block</b>. Blocks are matched by <b>block code</b> (e.g. census code) when both the officer and the booth have one; otherwise by block name.</div>
       <label class="check"><input type="checkbox" data-bind="setup.ruleDistinctOffice" ${st.ruleDistinctOffice ? 'checked' : ''} ${dis ? 'disabled' : ''}> <span><b>All 4 members of a polling party must be from different offices</b> (recommended)</span></label>
-      <label class="f">Two officers are “same office” when they have the same…
+      <label class="f">Two officers are “same office” when they have the same <b>Office Code</b>; if an officer has no office code, the same…
         <select data-bind="setup.officeKeyMode" ${dis ? 'disabled' : ''}><option value="name" ${st.officeKeyMode === 'name' ? 'selected' : ''}>Office name (stricter)</option><option value="nameaddr" ${st.officeKeyMode === 'nameaddr' ? 'selected' : ''}>Office name + office address</option></select></label>
       <label class="check"><input type="checkbox" data-bind="setup.ruleDistinctPostingBlock" ${st.ruleDistinctPostingBlock ? 'checked' : ''} ${dis ? 'disabled' : ''}> <span>Also: party members must have different <b>posting</b> blocks (optional, stricter)</span></label>
       <label class="check"><input type="checkbox" data-bind="setup.ruleDistinctHomeBlock" ${st.ruleDistinctHomeBlock ? 'checked' : ''} ${dis ? 'disabled' : ''}> <span>Also: party members must have different <b>home</b> blocks (optional, stricter)</span></label>
@@ -239,7 +239,7 @@ VIEWS.officers = () => {
   const dis = S.locks.officers;
   const v = validateOfficers();
   const q = UI.officerQuery.toLowerCase();
-  const rows = S.officers.map((o, i) => ({ o, i })).filter(({ o }) => !q || [o.pin, o.name, o.designation, o.office, o.duty, o.homeBlock, o.postingBlock, o.mobile].some(x => str(x).toLowerCase().includes(q)));
+  const rows = S.officers.map((o, i) => ({ o, i })).filter(({ o }) => !q || [o.pin, o.name, o.designation, o.officeCode, o.office, o.duty, o.homeBlock, o.homeBlockCode, o.postingBlock, o.postingBlockCode, o.mobile].some(x => str(x).toLowerCase().includes(q)));
   const ps = UI.officerPageSize, pages = Math.max(1, Math.ceil(rows.length / ps));
   UI.officerPage = Math.min(Math.max(1, UI.officerPage), pages);
   const slice = rows.slice((UI.officerPage - 1) * ps, UI.officerPage * ps);
@@ -249,7 +249,7 @@ VIEWS.officers = () => {
   return `
   <div class="card">
     <div class="card-head"><h2>Officers Database</h2></div>
-    <p class="small muted">Required columns: PIN, Name, Designation, Office Name, Office Address, Mobile, Duty, <b>Home Block</b>, <b>Posting Block</b>. Bank columns are optional (printed on attendance sheets). Blank PIN is auto-generated as District code + serial.</p>
+    <p class="small muted">Required columns: PIN, Name, Designation, Office Name, Office Address, Mobile, Duty, <b>Home Block</b>, <b>Posting Block</b>. Recommended: <b>Office Code</b>, <b>Home Block Code</b>, <b>Posting Block Code</b> (e.g. census block code) — when codes are given they decide “same office” and “same block”, so spelling differences in names do not matter. Codes in [brackets]. Bank columns are optional (printed on attendance sheets). Blank PIN is auto-generated as District code + serial.</p>
     <div class="kpis">${DUTIES.map(d => { const a = officersOfDuty(d.key).length, r = req[d.key]; return kpi(`${d.short} available${r ? ' / needed' : ''}`, r ? `${a} / ${r}` : a, r ? (a >= r ? 'ok' : 'bad') : ''); }).join('')}${kpi('Total', S.officers.length)}</div>
     ${S.booths.length ? '' : '<p class="small muted">“Needed” figures appear once booths are entered (booths + reserve %).</p>'}
     ${lockBar('officers', `
@@ -267,8 +267,8 @@ VIEWS.officers = () => {
       <button class="btn sm" data-act="officerPage" data-arg="1" ${UI.officerPage >= pages ? 'disabled' : ''}>Next ›</button></div>
     <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Mobile</th><th>Duty</th><th>Home block</th><th>Posting block</th><th>Issues</th><th></th></tr></thead><tbody>
     ${slice.length ? slice.map(({ o, i }) => { const iss = v.rowIssues.get(i); return `<tr class="${iss ? (iss.level === 'err' ? 'err' : 'warnrow') : ''}">
-      <td>${i + 1}</td><td class="pin">${esc(o.pin)}</td><td><b>${esc(o.name)}</b></td><td>${esc(o.designation)}</td><td>${esc(o.office)}<div class="small muted">${esc(o.officeAddress)}</div></td><td>${esc(o.mobile)}</td>
-      <td>${o.duty ? dutyBadge(o.duty) : '<span class="badge b-bad">?</span>'}</td><td>${esc(o.homeBlock)}</td><td>${esc(o.postingBlock)}</td>
+      <td>${i + 1}</td><td class="pin">${esc(o.pin)}</td><td><b>${esc(o.name)}</b></td><td>${esc(o.designation)}</td><td>${o.officeCode ? `<span class="badge b-info">${esc(o.officeCode)}</span> ` : ''}${esc(o.office)}<div class="small muted">${esc(o.officeAddress)}</div></td><td>${esc(o.mobile)}</td>
+      <td>${o.duty ? dutyBadge(o.duty) : '<span class="badge b-bad">?</span>'}</td><td>${esc(blockText(o.homeBlockCode, o.homeBlock))}</td><td>${esc(blockText(o.postingBlockCode, o.postingBlock))}</td>
       <td class="small">${iss ? esc(iss.msgs.join('; ')) : ''}</td>
       <td class="nowrap"><button class="btn sm" data-act="editOfficer" data-arg="${i}" ${dis ? 'disabled' : ''}>Edit</button> <button class="btn sm ghost-bad" data-act="delOfficer" data-arg="${i}" ${dis ? 'disabled' : ''}>✕</button></td></tr>`; }).join('')
       : '<tr><td colspan="11" class="center muted" style="padding:24px">No officers yet. Import an Excel file or add manually.</td></tr>'}
@@ -286,9 +286,10 @@ ACT.editOfficer = idx => {
     title: i >= 0 ? `Edit officer ${o.pin}` : 'Add officer', plain: true,
     body: `<form id="offForm" class="grid g3">
       ${f('pin', 'PIN (blank = auto)')}${f('name', 'Name *')}${f('designation', 'Designation')}
-      ${f('office', 'Office name *')}${f('officeAddress', 'Office address')}${f('mobile', 'Mobile')}
+      ${f('officeCode', 'Office code (recommended)')}${f('office', 'Office name *')}${f('officeAddress', 'Office address')}${f('mobile', 'Mobile')}
       <label class="f">Duty *<select name="duty"><option value="">— select —</option>${DUTIES.map(d => `<option ${o.duty === d.label ? 'selected' : ''}>${esc(d.label)}</option>`).join('')}</select></label>
-      ${f('homeBlock', 'Home block *', 'text', 'list="dlBlocks"')}${f('postingBlock', 'Posting block *', 'text', 'list="dlBlocks"')}
+      ${f('homeBlockCode', 'Home block code')}${f('homeBlock', 'Home block *', 'text', 'list="dlBlocks"')}
+      ${f('postingBlockCode', 'Posting block code')}${f('postingBlock', 'Posting block *', 'text', 'list="dlBlocks"')}
       ${f('acNo', 'Account no')}${f('bank', 'Bank')}${f('branch', 'Branch')}${f('ifsc', 'IFSC')}
       <datalist id="dlBlocks">${blocks.map(b => `<option value="${esc(b)}">`).join('')}</datalist></form>`,
     foot: `<button class="btn" data-close>Cancel</button><button class="btn ok" data-act="saveOfficer" data-arg="${i}">Save</button>`,
@@ -321,8 +322,8 @@ VIEWS.booths = () => {
   const v = validateBooths();
   const q = UI.boothQuery.toLowerCase();
   const blocks = {};
-  S.booths.forEach(b => { const k = blockKey(b.block); blocks[k] = blocks[k] || { name: b.block, n: 0 }; blocks[k].n++; });
-  const rows = S.booths.map((b, i) => ({ b, i })).filter(({ b }) => !q || [b.no, b.name, b.block, b.const].some(x => str(x).toLowerCase().includes(q)));
+  S.booths.forEach(b => { const k = blockId(boothBlockRef(b)); blocks[k] = blocks[k] || { name: blockText(b.blockCode, b.block), n: 0 }; blocks[k].n++; });
+  const rows = S.booths.map((b, i) => ({ b, i })).filter(({ b }) => !q || [b.no, b.name, b.block, b.blockCode, b.const].some(x => str(x).toLowerCase().includes(q)));
   return `
   <div class="card">
     <div class="card-head"><h2>Booth Entry</h2><span class="spacer"></span><span class="badge b-info">Independent step</span></div>
@@ -339,9 +340,9 @@ VIEWS.booths = () => {
   </div>
   <div class="card">${issuesBox(v, 'Booths')}
     <div class="btn-row" style="margin-bottom:8px"><input type="search" placeholder="Search booth no, location, block…" value="${esc(UI.boothQuery)}" data-inp="boothSearch" style="max-width:360px"></div>
-    <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>Constituency</th><th>Booth no</th><th>Main / Aux</th><th>Location / building</th><th>Block</th><th>Issues</th><th></th></tr></thead><tbody>
+    <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>Constituency</th><th>Booth no</th><th>Main / Aux</th><th>Location / building</th><th>Block [code]</th><th>Issues</th><th></th></tr></thead><tbody>
     ${rows.length ? rows.map(({ b, i }) => { const iss = v.rowIssues.get(i); return `<tr class="${iss ? (iss.level === 'err' ? 'err' : 'warnrow') : ''}">
-      <td>${i + 1}</td><td><span class="badge b-pri">${esc(b.const)}</span></td><td class="pin">${esc(b.no)}</td><td>${esc(b.ext)}</td><td>${esc(b.name)}</td><td>${esc(b.block)}</td>
+      <td>${i + 1}</td><td><span class="badge b-pri">${esc(b.const)}</span></td><td class="pin">${esc(b.no)}</td><td>${esc(b.ext)}</td><td>${esc(b.name)}</td><td>${esc(blockText(b.blockCode, b.block))}</td>
       <td class="small">${iss ? esc(iss.msgs.join('; ')) : ''}</td>
       <td class="nowrap"><button class="btn sm" data-act="editBooth" data-arg="${i}" ${dis ? 'disabled' : ''}>Edit</button> <button class="btn sm ghost-bad" data-act="delBooth" data-arg="${i}" ${dis ? 'disabled' : ''}>✕</button></td></tr>`; }).join('')
       : '<tr><td colspan="8" class="center muted" style="padding:24px">No booths yet. Import an Excel file or add manually.</td></tr>'}
@@ -361,6 +362,7 @@ ACT.editBooth = idx => {
       <label class="f">Main / Aux<select name="ext"><option ${b.ext !== 'Aux' ? 'selected' : ''}>Main</option><option ${b.ext === 'Aux' ? 'selected' : ''}>Aux</option></select></label>
       <label class="f span2">Location / building name<input name="name" value="${esc(b.name)}"></label>
       <label class="f">Block *<input name="block" value="${esc(b.block)}" list="dlBlocks2"></label>
+      <label class="f">Block code (e.g. census)<input name="blockCode" value="${esc(b.blockCode)}"></label>
       <datalist id="dlBlocks2">${blocks.map(x => `<option value="${esc(x)}">`).join('')}</datalist></form>`,
     foot: `<button class="btn" data-close>Cancel</button><button class="btn ok" data-act="saveBooth" data-arg="${i}">Save</button>`,
   });
@@ -368,8 +370,8 @@ ACT.editBooth = idx => {
 ACT.saveBooth = idx => {
   const i = Number(idx), form = $('#boothForm');
   const b = Object.assign(blankBooth(), { id: i >= 0 ? S.booths[i].id : newBoothId() });
-  ['const', 'no', 'ext', 'name', 'block'].forEach(k => { b[k] = str(form.elements[k].value); });
-  if (!b.no || !b.block) return toast('Booth no and block are required.', 'bad');
+  ['const', 'no', 'ext', 'name', 'block', 'blockCode'].forEach(k => { b[k] = str(form.elements[k].value); });
+  if (!b.no || !(b.block || b.blockCode)) return toast('Booth no and block (name or code) are required.', 'bad');
   if (S.booths.some((x, j) => j !== i && x.const === b.const && str(x.no).toUpperCase() === b.no.toUpperCase())) return toast('This booth number already exists in that constituency.', 'bad');
   if (i >= 0) S.booths[i] = b; else S.booths.push(b);
   persist(); closeTopModal(); render();
@@ -450,11 +452,11 @@ VIEWS.second = () => {
       ${list.length && !locked ? `<div class="alert ${bad.length ? 'bad' : 'info'}">${bad.length ? `<b>${bad.length} rule check(s) failed</b> — re-run before locking.` : `Not locked yet — you may re-run as many times as needed, then <b>Verify &amp; Lock ${PART_NAME[kind]}</b>. The other parts are independent.`}</div>` : ''}
       ${probs.length ? `<div class="alert bad"><b>Cannot run yet:</b><ul>${probs.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}`;
     if (kind !== 'polling' && !partApplicable(kind)) body = `<div class="alert info">${nm}: required count is 0 for every constituency (see Setup) — nothing to randomise, nothing to lock.</div>`;
-    else if (kind === 'polling') body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Party no</th><th>Const.</th><th>Presiding Officer</th><th>Polling Officer-1</th><th>Polling Officer-2</th><th>Polling Officer-3</th></tr></thead><tbody>
+    else if (kind === 'polling') body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Party no</th><th>Const.</th><th>PrO PIN</th><th>P1 PIN</th><th>P2 PIN</th><th>P3 PIN</th></tr></thead><tbody>
       ${list.length ? list.map(p => `<tr><td><b>${esc(p.partyNo)}</b></td><td>${esc(p.const)}</td>${PARTY_ROLES.map(r => memberCell(p[r])).join('')}</tr>`).join('') : '<tr><td colspan="6" class="center muted" style="padding:20px">Not run yet.</td></tr>'}
       </tbody></table></div>`;
-    else body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Order no</th><th>Const.</th><th>PIN</th><th>Name</th><th>Designation / office</th><th>Home block</th><th>Posting block</th></tr></thead><tbody>
-      ${list.length ? list.map(x => { const o = officerByPin(x.pin) || {}; return `<tr><td><b>${esc(x.orderNo)}</b></td><td>${esc(x.const)}</td><td class="pin">${esc(x.pin)}</td><td>${esc(o.name)}</td><td>${esc(o.designation)}, ${esc(o.office)}</td><td>${esc(o.homeBlock)}</td><td>${esc(o.postingBlock)}</td></tr>`; }).join('') : '<tr><td colspan="7" class="center muted" style="padding:20px">Not run yet.</td></tr>'}
+    else body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Order no</th><th>Const.</th><th>PIN</th></tr></thead><tbody>
+      ${list.length ? list.map(x => `<tr><td><b>${esc(x.orderNo)}</b></td><td>${esc(x.const)}</td><td class="pin">${esc(x.pin)}</td></tr>`).join('') : '<tr><td colspan="3" class="center muted" style="padding:20px">Not run yet.</td></tr>'}
       </tbody></table></div>`;
   } else body = auditHtml(runAudit(), ['2nd']);
   const tabLabel = (k, n) => `${PART_NAME[k]} (${n})${S.parts.second[k] ? ' 🔒' : ''}`;
@@ -468,15 +470,14 @@ VIEWS.second = () => {
     </tbody></table></div>
   </div>
   <div class="card">
+    ${SECRECY_NOTE}
     <div class="subtabs">${[['polling', tabLabel('polling', S.second.parties.length)], ['pccp', tabLabel('pccp', S.second.pccp.length)], ['micro', tabLabel('micro', S.second.micro.length)], ['audit', 'Rule verification']].map(([k, l]) => `<button class="${sub === k ? 'active' : ''}" data-act="sub" data-arg="second:${k}">${esc(l)}</button>`).join('')}</div>
     ${body}
   </div>`;
 };
-function memberCell(pin) {
-  const o = officerByPin(pin);
-  if (!o) return `<td class="pin">${esc(pin)}</td>`;
-  return `<td><span class="pin">${esc(o.pin)}</span> ${esc(o.name)}<div class="small muted">${esc(o.office)} · H: ${esc(o.homeBlock)} · P: ${esc(o.postingBlock)}</div></td>`;
-}
+/** Randomisation screens show the PIN only (secrecy). Names / offices / blocks appear only in letters and reports. */
+function memberCell(pin) { return `<td class="pin">${esc(pin)}</td>`; }
+const SECRECY_NOTE = '<div class="alert info">🔒 <b>Secrecy:</b> only PINs are shown during randomisation. Names, designations, offices and blocks appear only in the letters, reports and Excel exports.</div>';
 ACT.sub = arg => { const [v, s] = arg.split(':'); UI.sub[v] = s; render(); };
 ACT.runSecond = kind => {
   if (S.parts.second[kind]) return toast(`${PART_NAME[kind]} is locked. Unlock it to re-run.`, 'bad');
@@ -527,7 +528,7 @@ VIEWS.final = () => {
       ${has && !locked ? `<div class="alert ${bad.length ? 'bad' : 'info'}">${bad.length ? `<b>${bad.length} rule check(s) failed</b> — re-run before locking.` : `Not locked yet — re-run as many times as needed, then <b>Verify &amp; Lock ${PART_NAME[kind]}</b>.`}</div>` : ''}`;
     if (kind === 'polling') {
       const reserve = S.second.parties.filter(p => !Object.values(tags).includes(p.partyNo));
-      body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Const.</th><th>Booth</th><th>Block</th><th>Location</th><th>Party</th><th>PrO</th><th>P1</th><th>P2</th><th>P3</th></tr></thead><tbody>
+      body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Const.</th><th>Booth</th><th>Block</th><th>Location</th><th>Party</th><th>PrO PIN</th><th>P1 PIN</th><th>P2 PIN</th><th>P3 PIN</th></tr></thead><tbody>
       ${S.booths.map(b => { const p = S.second.parties.find(x => x.partyNo === tags[b.id]); return `<tr><td>${esc(b.const)}</td><td class="pin">${esc(boothLabel(b))}</td><td><b>${esc(b.block)}</b></td><td>${esc(b.name)}</td><td><b>${p ? esc(p.partyNo) : '—'}</b></td>${p ? PARTY_ROLES.map(r => memberCell(p[r])).join('') : '<td colspan="4" class="muted">not tagged</td>'}</tr>`; }).join('')}
       </tbody></table></div>
       ${has ? `<h4 style="margin-top:14px">Reserve polling parties (${reserve.length})</h4><p class="small">${reserve.map(p => `<span class="badge b-warn">${esc(p.partyNo)}</span>`).join(' ') || '—'}</p>` : ''}`;
@@ -535,7 +536,7 @@ VIEWS.final = () => {
     else {
       const list = S.second[kind], plan = singlePlan(kind);
       const reserve = list.filter(x => !Object.values(tags).includes(x.orderNo));
-      body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Const.</th><th>Booth</th><th>Block</th><th>Location</th><th>Order no</th><th>Officer</th></tr></thead><tbody>
+      body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Const.</th><th>Booth</th><th>Block</th><th>Location</th><th>Order no</th><th>Officer PIN</th></tr></thead><tbody>
       ${S.booths.filter(b => plan.some(p => p.code === b.const)).map(b => { const x = list.find(i => i.orderNo === tags[b.id]); return `<tr><td>${esc(b.const)}</td><td class="pin">${esc(boothLabel(b))}</td><td><b>${esc(b.block)}</b></td><td>${esc(b.name)}</td><td>${x ? `<b>${esc(x.orderNo)}</b>` : '—'}</td>${x ? memberCell(x.pin) : '<td class="muted">not tagged</td>'}</tr>`; }).join('')}
       </tbody></table></div>
       ${has ? `<h4 style="margin-top:14px">Reserve ${PART_NAME[kind]} (${reserve.length})</h4><p class="small">${reserve.map(x => `<span class="badge b-warn">${esc(x.orderNo)}</span>`).join(' ') || '—'}</p>` : ''}`;
@@ -549,6 +550,7 @@ VIEWS.final = () => {
     <div class="btn-row"><button class="btn" data-act="go" data-arg="reports">Final letters &amp; reports →</button></div>
   </div>
   <div class="card">
+    ${SECRECY_NOTE}
     <div class="subtabs">${[['polling', tabLabel('polling', `${hasP}/${S.booths.length}`)], ['pccp', tabLabel('pccp', hasC)], ['micro', tabLabel('micro', hasM)], ['audit', 'Rule verification']].map(([k, l]) => `<button class="${sub === k ? 'active' : ''}" data-act="sub" data-arg="final:${k}">${esc(l)}</button>`).join('')}</div>
     ${body}
   </div>`;
@@ -614,7 +616,7 @@ function shuffleAnimation(title, pool, done) {
     step += 10;
     const bar = $('#shBar'); if (bar) bar.style.width = step + '%';
     const t = $('#shText'); if (t) t.textContent = step < 40 ? `Shuffling ${pool.length} records…` : step < 80 ? 'Applying home-block / posting-block / office rules…' : 'Finalising…';
-    const rows = $('#shRows'); if (rows) rows.innerHTML = shuffle(pool).slice(0, 6).map(o => `${esc(o.pin)}  ${esc(o.name)}  [${esc(o.postingBlock)}]`).join('<br>');
+    const rows = $('#shRows'); if (rows) rows.innerHTML = shuffle(pool).slice(0, 6).map(o => `PIN ${esc(o.pin)}`).join('<br>');
     if (step < 100) return setTimeout(tick, 90);
     m._close();
     try { done(); } catch (err) { console.error(err); showErrors('Randomisation could not be completed', String(err.message || err).split('\n')); }

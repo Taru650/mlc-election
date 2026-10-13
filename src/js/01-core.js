@@ -87,11 +87,24 @@ function normText(v) { return str(v).toLowerCase().replace(/[^a-z0-9ऀ-ॿ]+/g,
 function blockKey(v) {
   return str(v).toLowerCase().replace(/\b(block|prakhand|blk)\b/g, ' ').replace(/[^a-z0-9ऀ-ॿ]+/g, '');
 }
+/** Codes (office code, census block code) are compared ignoring spaces, punctuation, case, leading zeros and Excel's ".0". */
+function codeKey(v) { return str(v).replace(/\.0+$/, '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().replace(/^0+(?=.)/, ''); }
+/** Office identity: the Office Code when given (immune to spelling differences in the name), otherwise the office name. */
 function officeKey(o) {
+  const c = codeKey(o.officeCode);
+  if (c) return 'c:' + c;
   const base = normText(o.office);
-  if (S.setup.officeKeyMode === 'nameaddr') return base + '|' + normText(o.officeAddress);
-  return base;
+  if (!base) return '';
+  if (S.setup.officeKeyMode === 'nameaddr') return 'n:' + base + '|' + normText(o.officeAddress);
+  return 'n:' + base;
 }
+/** A block reference {c: code, n: name}. Two references are the same block when both codes exist and are equal;
+ *  when either code is missing, the (loosely compared) names decide. */
+function blockRef(code, name) { return { c: codeKey(code), n: blockKey(name) }; }
+function sameBlock(a, b) { if (a.c && b.c) return a.c === b.c; return !!a.n && a.n === b.n; }
+function blockId(r) { return r.c ? 'c:' + r.c : (r.n ? 'n:' + r.n : ''); }
+function boothBlockRef(b) { return blockRef(b.blockCode, b.block); }
+function blockText(code, name) { return str(name) + (str(code) ? ` [${str(code)}]` : ''); }
 function pad(n, w = 2) { return String(n).padStart(w, '0'); }
 function ordinal(n) { return n + (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'); }
 function intOr0(v) { const n = parseInt(v, 10); return isFinite(n) && n > 0 ? n : 0; }
@@ -168,8 +181,9 @@ function dutyKeyFromLabel(label) { const d = DUTIES.find(x => x.label === label)
 function officersOfDuty(key) { const lbl = DUTY_BY_KEY[key].label; return S.officers.filter(o => o.duty === lbl); }
 function boothsOf(code) { return S.booths.filter(b => b.const === code); }
 function reserveTarget(required) { return Math.ceil(required * (1 + (Number(S.setup.reservePct) || 0) / 100)); }
-function exclusionBlocks(o) { const s = new Set(); [o.homeBlock, o.postingBlock].forEach(b => { const k = blockKey(b); if (k) s.add(k); }); return s; }
-function canServeAt(o, booth) { return !!o && !!booth && !exclusionBlocks(o).has(blockKey(booth.block)); }
+/** Home block and posting block of an officer as block references (used for exclusion). */
+function exclusionBlocks(o) { return [blockRef(o.homeBlockCode, o.homeBlock), blockRef(o.postingBlockCode, o.postingBlock)].filter(r => r.c || r.n); }
+function canServeAt(o, booth) { if (!o || !booth) return false; const br = boothBlockRef(booth); return !exclusionBlocks(o).some(r => sameBlock(r, br)); }
 function boothLabel(b) { return b ? `${b.no}${b.ext && b.ext !== 'Main' ? ' (' + b.ext + ')' : ''}` : ''; }
 
 /** Normalises a free-text duty to one of the six duty labels; returns '' when unknown. */
@@ -251,11 +265,11 @@ function hydrate(st) {
 function addLog(action) { S.log.push({ time: nowStamp(), action }); if (S.log.length > 2000) S.log.shift(); }
 
 function blankOfficer() {
-  return { pin: '', name: '', designation: '', office: '', officeAddress: '', mobile: '', duty: '', homeBlock: '', postingBlock: '', acNo: '', bank: '', branch: '', ifsc: '' };
+  return { pin: '', name: '', designation: '', officeCode: '', office: '', officeAddress: '', mobile: '', duty: '', homeBlockCode: '', homeBlock: '', postingBlockCode: '', postingBlock: '', acNo: '', bank: '', branch: '', ifsc: '' };
 }
 let _boothSeq = 0;
 function newBoothId() { _boothSeq++; return 'B' + Date.now().toString(36) + _boothSeq.toString(36) + randInt(1e6).toString(36); }
-function blankBooth() { return { id: '', no: '', name: '', ext: 'Main', block: '', const: '' }; }
+function blankBooth() { return { id: '', no: '', name: '', ext: 'Main', block: '', blockCode: '', const: '' }; }
 
 /* ---------------- toast / modal ---------------- */
 function toast(msg, kind = '') {

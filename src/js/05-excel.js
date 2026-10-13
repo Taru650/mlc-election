@@ -15,9 +15,10 @@ const SETUP_FIELDS = [
 const DATE_FIELDS = new Set(['pollDate', 'letterDate', 'matCollectDate']);
 const TIME_FIELDS = new Set(['pollFrom', 'pollTo', 'matCollectTime']);
 const BOOL_FIELDS = new Set(['ruleDistinctOffice', 'ruleDistinctPostingBlock', 'ruleDistinctHomeBlock']);
-const OFFICER_HEAD = ['PIN', 'Name', 'Designation', 'Office Name', 'Office Address', 'Mobile', 'Duty', 'Home Block', 'Posting Block', 'Account No', 'Bank', 'Branch', 'IFSC'];
-const OFFICER_KEYS = ['pin', 'name', 'designation', 'office', 'officeAddress', 'mobile', 'duty', 'homeBlock', 'postingBlock', 'acNo', 'bank', 'branch', 'ifsc'];
-const BOOTH_HEAD = ['Constituency', 'Booth No', 'Main/Aux', 'Location / Building', 'Block'];
+const OFFICER_HEAD = ['PIN', 'Name', 'Designation', 'Office Code', 'Office Name', 'Office Address', 'Mobile', 'Duty', 'Home Block Code', 'Home Block', 'Posting Block Code', 'Posting Block', 'Account No', 'Bank', 'Branch', 'IFSC'];
+const OFFICER_KEYS = ['pin', 'name', 'designation', 'officeCode', 'office', 'officeAddress', 'mobile', 'duty', 'homeBlockCode', 'homeBlock', 'postingBlockCode', 'postingBlock', 'acNo', 'bank', 'branch', 'ifsc'];
+const OFFICER_WIDTHS = [12, 24, 22, 12, 28, 26, 13, 24, 12, 16, 12, 16, 16, 14, 14, 13];
+const BOOTH_HEAD = ['Constituency', 'Booth No', 'Main/Aux', 'Location / Building', 'Block Code', 'Block'];
 
 function yes(v) { const s = str(v).toLowerCase(); return s === 'yes' || s === 'y' || s === 'true' || s === '1'; }
 function hk(h) { return str(h).toLowerCase().replace(/[^a-z0-9]/g, ''); }
@@ -56,6 +57,9 @@ function readme(lines) { const ws = XLSX.utils.aoa_to_sheet(lines.map(l => [l]))
 
 /* ---------- column mapping (tolerant of many header spellings) ---------- */
 const OFFICER_MAP = [
+  ['officeCode', ['officecode', 'officeid', 'officecodeno', 'officeno', 'officecodenumber']],
+  ['homeBlockCode', ['homeblockcode', 'homeblockcensuscode', 'nativeblockcode', 'homecode']],
+  ['postingBlockCode', ['postingblockcode', 'postingblockcensuscode', 'workingblockcode', 'officeblockcode', 'blockcode', 'blockcensuscode']],
   ['pin', ['pin', 'pinno', 'pinnumber', 'employeeid', 'empid', 'empcode', 'employeecode', 'hrmsid', 'hrmsno']],
   ['name', ['name', 'officername', 'employeename', 'nameofofficer', 'nameofemployee', 'fullname', 'staffname', 'nameofthestaff']],
   ['designation', ['designation', 'desig', 'post']],
@@ -80,6 +84,11 @@ function officerFromObj(r) {
   Object.keys(r).forEach(h => {
     if (h === '__raw') return;
     let k = mapHeaderKey(h, OFFICER_MAP);
+    if (!k && h.includes('code')) {
+      if (h.includes('home') && h.includes('block')) k = 'homeBlockCode';
+      else if (h.includes('block')) k = 'postingBlockCode';
+      else if (h.includes('office')) k = 'officeCode';
+    }
     if (!k) {
       if (h.includes('home') && h.includes('block')) k = 'homeBlock';
       else if (h.includes('posting') || (h.includes('work') && h.includes('block'))) k = 'postingBlock';
@@ -101,12 +110,14 @@ function officerFromObj(r) {
   }
   o.duty = normalizeDuty(o.duty) || o.duty;
   o.mobile = o.mobile.replace(/\.0$/, '');
+  ['officeCode', 'homeBlockCode', 'postingBlockCode'].forEach(k => { o[k] = o[k].replace(/\.0$/, ''); });
   return o;
 }
 const BOOTH_MAP = [
   ['no', ['boothno', 'booth', 'boothnumber', 'psno', 'pollingstationno', 'pollingstationnumber', 'no', 'boothnum', 'sno']],
   ['name', ['location', 'boothlocation', 'boothloacation', 'boothname', 'pollingstationname', 'pollingstation', 'building', 'buildingname', 'locationbuilding', 'locationbuildingname', 'name', 'psname']],
   ['ext', ['ext', 'mainaux', 'boothtype', 'mainauxiliary', 'auxiliary']],
+  ['blockCode', ['blockcode', 'boothblockcode', 'blockcensuscode', 'censusblockcode', 'censuscode']],
   ['block', ['block', 'boothblock', 'blockname', 'prakhand']],
   ['const', ['constituency', 'const', 'constcode', 'constituencycode', 'constituencytype', 'constituencyname']],
   ['type', ['type']],
@@ -132,6 +143,7 @@ function boothFromObj(r) {
   });
   if (typeVal) { if (/^(main|aux)/i.test(typeVal)) { if (!b.ext) b.ext = typeVal; } else if (!b.const) b.const = typeVal; }
   b.no = b.no.replace(/\.0$/, '');
+  b.blockCode = b.blockCode.replace(/\.0$/, '');
   b.ext = /aux/i.test(b.ext) ? 'Aux' : 'Main';
   b.const = resolveConst(b.const);
   return b;
@@ -183,7 +195,7 @@ function parseTrainingRows(objs) {
   return tr;
 }
 function officerRows(list = S.officers) { return list.map(o => OFFICER_KEYS.map(k => o[k])); }
-function boothRows() { return S.booths.map(b => [b.const, b.no, b.ext, b.name, b.block]); }
+function boothRows() { return S.booths.map(b => [b.const, b.no, b.ext, b.name, b.blockCode, b.block]); }
 
 const README_LINES = [
   'MLC Polling Personnel Randomisation — project workbook',
@@ -194,9 +206,9 @@ const README_LINES = [
   '',
   'Officers — Duty must be one of: PRESIDING OFFICER, POLLING OFFICER-1, POLLING OFFICER-2, POLLING OFFICER-3, PATROLLING MAGISTRATE, MICRO OBSERVER',
   '          (short forms PrO, P1, P2, P3, PCCP, MO are also accepted).',
-  'Officers — Home Block and Posting Block are used for exclusion: nobody is tagged to a booth in his/her home or posting block.',
-  'Officers — Office Name is used for the rule that the 4 members of a party must be from different offices.',
-  'Booths   — Constituency must be one of the codes in the Constituencies sheet (e.g. TC, GC). Block is mandatory.',
+  'Officers — Home Block (Code) and Posting Block (Code) are used for exclusion: nobody is tagged to a booth in his/her home or posting block. When both officer and booth have a block code (e.g. census code), the code decides.',
+  'Officers — Office Code (or Office Name if no code) is used for the rule that the 4 members of a party must be from different offices. Codes protect against spelling mistakes in names.',
+  'Booths   — Constituency must be one of the codes in the Constituencies sheet (e.g. TC, GC). Block name or Block Code is mandatory (Block Code recommended).',
   'Dates    — DD-MM-YYYY.  Times — HH:MM (24 hour).',
 ];
 
@@ -207,8 +219,8 @@ function buildProjectWorkbook() {
   addSheet(wb, 'Setup', ['Key', 'Field', 'Value'], setupRows(), [24, 52, 70]);
   addSheet(wb, 'Constituencies', ['Code', 'Name', 'PCCP Required', 'Micro Observers Required'], constRows(), [10, 34, 16, 24]);
   addSheet(wb, 'Training', ['Duty', 'Training', 'Date', 'Start', 'End', 'Venue'], trainingRows(), [24, 10, 13, 8, 8, 40]);
-  addSheet(wb, 'Officers', OFFICER_HEAD, officerRows(), [12, 24, 22, 28, 26, 13, 24, 16, 16, 16, 14, 14, 13]);
-  addSheet(wb, 'Booths', BOOTH_HEAD, boothRows(), [13, 10, 10, 44, 18]);
+  addSheet(wb, 'Officers', OFFICER_HEAD, officerRows(), OFFICER_WIDTHS);
+  addSheet(wb, 'Booths', BOOTH_HEAD, boothRows(), [13, 10, 10, 44, 12, 18]);
   const nm = pin => (officerByPin(pin) || {}).name || '';
   addSheet(wb, 'Second_Parties', ['Party No', 'Constituency', 'PrO PIN', 'PrO Name', 'P1 PIN', 'P1 Name', 'P2 PIN', 'P2 Name', 'P3 PIN', 'P3 Name'],
     S.second.parties.map(p => [p.partyNo, p.const, p.PRO, nm(p.PRO), p.P1, nm(p.P1), p.P2, nm(p.P2), p.P3, nm(p.P3)]));
@@ -369,9 +381,9 @@ ACT.importLegacyTraining = async () => {
 ACT.officerTemplate = () => {
   const wb = XLSX.utils.book_new();
   addSheet(wb, 'Officers', OFFICER_HEAD, [
-    ['', 'RAMESH KUMAR', 'Headmaster', 'Middle School Piprahi', 'Piprahi', '9000000001', 'PRESIDING OFFICER', 'Sheohar', 'Piprahi', '1234567890', 'SBI', 'Sheohar', 'SBIN0000001'],
-    ['', 'SUNITA DEVI', 'Teacher', 'High School Tariyani', 'Tariyani', '9000000002', 'POLLING OFFICER-1', 'Tariyani', 'Tariyani', '', '', '', ''],
-  ], [12, 24, 22, 28, 26, 13, 24, 16, 16, 16, 14, 14, 13]);
+    ['', 'RAMESH KUMAR', 'Headmaster', '10231', 'Middle School Piprahi', 'Piprahi', '9000000001', 'PRESIDING OFFICER', '0101', 'Sheohar', '0102', 'Piprahi', '1234567890', 'SBI', 'Sheohar', 'SBIN0000001'],
+    ['', 'SUNITA DEVI', 'Teacher', '10458', 'High School Tariyani', 'Tariyani', '9000000002', 'POLLING OFFICER-1', '0105', 'Tariyani', '0105', 'Tariyani', '', '', '', ''],
+  ], OFFICER_WIDTHS);
   XLSX.utils.book_append_sheet(wb, readme(README_LINES.slice(6, 10).concat(['', 'Leave PIN blank to auto-generate it (district code + serial). Delete the two example rows before use.'])), 'Instructions');
   saveWb(wb, 'Officers_Template.xlsx');
 };
@@ -390,14 +402,14 @@ ACT.importOfficers = async mode => {
   const v = validateOfficers();
   toast(`${list.length} officers imported. ${v.errors.length} error(s), ${v.warnings.length} warning(s).`, v.errors.length ? 'warn' : 'ok');
 };
-ACT.exportOfficers = () => { const wb = XLSX.utils.book_new(); addSheet(wb, 'Officers', OFFICER_HEAD, officerRows(), [12, 24, 22, 28, 26, 13, 24, 16, 16, 16, 14, 14, 13]); saveWb(wb, `Officers_${safeName(S.setup.district)}.xlsx`); };
+ACT.exportOfficers = () => { const wb = XLSX.utils.book_new(); addSheet(wb, 'Officers', OFFICER_HEAD, officerRows(), OFFICER_WIDTHS); saveWb(wb, `Officers_${safeName(S.setup.district)}.xlsx`); };
 
 /* ---------- booths ---------- */
 ACT.boothTemplate = () => {
   const wb = XLSX.utils.book_new();
   const c1 = (S.constituencies[0] || {}).code || 'TC', c2 = (S.constituencies[1] || {}).code || 'GC';
-  addSheet(wb, 'Booths', BOOTH_HEAD, [[c1, '1', 'Main', 'Upgraded High School, Room 1', 'Piprahi'], [c1, '1A', 'Aux', 'Upgraded High School, Room 2', 'Piprahi'], [c2, '1', 'Main', 'Block Office Hall', 'Tariyani']], [13, 10, 10, 44, 18]);
-  XLSX.utils.book_append_sheet(wb, readme(['Constituency = a code from Setup (' + S.constituencies.map(c => c.code).join(', ') + ').', 'Main/Aux = Main or Aux.', 'Block is mandatory — officers whose home or posting block is this block are never tagged to this booth.', 'Delete the example rows before use.']), 'Instructions');
+  addSheet(wb, 'Booths', BOOTH_HEAD, [[c1, '1', 'Main', 'Upgraded High School, Room 1', '0102', 'Piprahi'], [c1, '1A', 'Aux', 'Upgraded High School, Room 2', '0102', 'Piprahi'], [c2, '1', 'Main', 'Block Office Hall', '0105', 'Tariyani']], [13, 10, 10, 44, 12, 18]);
+  XLSX.utils.book_append_sheet(wb, readme(['Constituency = a code from Setup (' + S.constituencies.map(c => c.code).join(', ') + ').', 'Main/Aux = Main or Aux.', 'Block is mandatory — officers whose home or posting block is this block are never tagged to this booth.', 'Block Code (e.g. census block code) is recommended: when the booth and the officer both have a code, the code decides and spelling of the name does not matter.', 'Delete the example rows before use.']), 'Instructions');
   saveWb(wb, 'Booths_Template.xlsx');
 };
 ACT.importBooths = async mode => {
@@ -414,7 +426,7 @@ ACT.importBooths = async mode => {
   const v = validateBooths();
   toast(`${list.length} booths imported. ${v.errors.length} error(s), ${v.warnings.length} warning(s).`, v.errors.length ? 'warn' : 'ok');
 };
-ACT.exportBooths = () => { const wb = XLSX.utils.book_new(); addSheet(wb, 'Booths', BOOTH_HEAD, boothRows(), [13, 10, 10, 44, 18]); saveWb(wb, `Booths_${safeName(S.setup.district)}.xlsx`); };
+ACT.exportBooths = () => { const wb = XLSX.utils.book_new(); addSheet(wb, 'Booths', BOOTH_HEAD, boothRows(), [13, 10, 10, 44, 12, 18]); saveWb(wb, `Booths_${safeName(S.setup.district)}.xlsx`); };
 
 /* ---------- letters / results ---------- */
 ACT.exportLetter1 = () => {

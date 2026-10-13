@@ -56,12 +56,16 @@ function generateTestState(profileKey) {
       { date: '2026-10-22', start: '11:00', end: '13:00', venue: 'At Briefing Place' },
     ];
   });
+  // fictitious block codes (stand-in for census block codes) and office codes
+  const bCode = {}; P.blocks.forEach((bl, i) => { bCode[bl] = P.distCode + pad(i + 1, 2); });
+  const oCode = {}; let oSeq = 1;
+  const officeCodeOf = name => (oCode[name] = oCode[name] || P.distCode + pad(oSeq++, 3));
   // booths: spread across blocks
   P.cons.forEach(c => {
     for (let i = 1; i <= c.booths; i++) {
       const block = P.blocks[(i - 1 + (c.code === 'GC' ? 2 : 0)) % P.blocks.length];
       const aux = i % 7 === 0;
-      st.booths.push({ id: newBoothId(), const: c.code, no: aux ? `${i - 1}A` : String(i), ext: aux ? 'Aux' : 'Main', name: `${pickRandom(['Middle School', 'High School', 'Block Office Hall', 'Panchayat Bhawan', 'Kanya Middle School'])} ${block}, Room ${1 + (i % 3)}`, block });
+      st.booths.push({ id: newBoothId(), const: c.code, blockCode: bCode[block], no: aux ? `${i - 1}A` : String(i), ext: aux ? 'Aux' : 'Main', name: `${pickRandom(['Middle School', 'High School', 'Block Office Hall', 'Panchayat Bhawan', 'Kanya Middle School'])} ${block}, Room ${1 + (i % 3)}`, block });
     }
   });
   // officers
@@ -83,8 +87,8 @@ function generateTestState(profileKey) {
       else { posting = pickRandom(P.blocks); office = `${pickRandom(OFFICE_TYPES.party)} ${posting}${randInt(3) === 0 ? '' : ' No.' + (1 + randInt(4))}`; }
       const home = randInt(100) < 40 ? posting : pickRandom(P.blocks);
       st.officers.push({
-        pin: P.distCode + pad(serial, 5), name, designation: pickRandom(DESIG[d.key]), office, officeAddress: `${posting}, ${P.district}`,
-        mobile: '90' + P.distCode + pad(serial, 6), duty: d.label, homeBlock: home, postingBlock: posting,
+        pin: P.distCode + pad(serial, 5), name, designation: pickRandom(DESIG[d.key]), officeCode: officeCodeOf(office), office, officeAddress: `${posting}, ${P.district}`,
+        mobile: '90' + P.distCode + pad(serial, 6), duty: d.label, homeBlockCode: bCode[home], homeBlock: home, postingBlockCode: bCode[posting], postingBlock: posting,
         acNo: String(30000000000 + serial * 7919), bank: 'State Bank of India', branch: P.district, ifsc: 'SBIN000' + pad(1000 + randInt(8999), 4),
       });
       serial++;
@@ -98,13 +102,15 @@ function generateErrorState() {
   const st = generateTestState('small');
   const o = st.officers;
   o[0].pin = o[1].pin; // duplicate PIN
-  o[2].postingBlock = ''; // missing posting block
+  o[2].postingBlock = ''; o[2].postingBlockCode = ''; // missing posting block
   o[3].duty = 'DRIVER'; // unknown duty
-  o[4].office = ''; // missing office
+  o[4].office = ''; o[4].officeCode = ''; // missing office
   o[5].mobile = '98765'; // short mobile
-  o[6].homeBlock = 'Piprahee'; // misspelt block
+  o[6].homeBlock = 'Piprahee'; o[6].homeBlockCode = ''; // misspelt block, no code to rescue it
+  o[8].officeCode = o[9].officeCode = '99999'; o[9].office = 'Some Other Office'; // one code, two names
+  o[10].postingBlockCode = '7777'; // block name with a wrong code
   o[7].homeBlock = '';
-  st.booths[0].block = '';
+  st.booths[0].block = ''; st.booths[0].blockCode = '';
   st.booths[1].const = 'XC';
   st.booths[3].no = st.booths[2].no; st.booths[3].const = st.booths[2].const;
   st.log = [{ time: nowStamp(), action: 'Test data WITH DELIBERATE ERRORS generated (for testing validation)' }];

@@ -344,11 +344,24 @@ function normText(v) { return str(v).toLowerCase().replace(/[^a-z0-9ऀ-ॿ]+/g,
 function blockKey(v) {
   return str(v).toLowerCase().replace(/\b(block|prakhand|blk)\b/g, ' ').replace(/[^a-z0-9ऀ-ॿ]+/g, '');
 }
+/** Codes (office code, census block code) are compared ignoring spaces, punctuation, case, leading zeros and Excel's ".0". */
+function codeKey(v) { return str(v).replace(/\.0+$/, '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().replace(/^0+(?=.)/, ''); }
+/** Office identity: the Office Code when given (immune to spelling differences in the name), otherwise the office name. */
 function officeKey(o) {
+  const c = codeKey(o.officeCode);
+  if (c) return 'c:' + c;
   const base = normText(o.office);
-  if (S.setup.officeKeyMode === 'nameaddr') return base + '|' + normText(o.officeAddress);
-  return base;
+  if (!base) return '';
+  if (S.setup.officeKeyMode === 'nameaddr') return 'n:' + base + '|' + normText(o.officeAddress);
+  return 'n:' + base;
 }
+/** A block reference {c: code, n: name}. Two references are the same block when both codes exist and are equal;
+ *  when either code is missing, the (loosely compared) names decide. */
+function blockRef(code, name) { return { c: codeKey(code), n: blockKey(name) }; }
+function sameBlock(a, b) { if (a.c && b.c) return a.c === b.c; return !!a.n && a.n === b.n; }
+function blockId(r) { return r.c ? 'c:' + r.c : (r.n ? 'n:' + r.n : ''); }
+function boothBlockRef(b) { return blockRef(b.blockCode, b.block); }
+function blockText(code, name) { return str(name) + (str(code) ? ` [${str(code)}]` : ''); }
 function pad(n, w = 2) { return String(n).padStart(w, '0'); }
 function ordinal(n) { return n + (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'); }
 function intOr0(v) { const n = parseInt(v, 10); return isFinite(n) && n > 0 ? n : 0; }
@@ -425,8 +438,9 @@ function dutyKeyFromLabel(label) { const d = DUTIES.find(x => x.label === label)
 function officersOfDuty(key) { const lbl = DUTY_BY_KEY[key].label; return S.officers.filter(o => o.duty === lbl); }
 function boothsOf(code) { return S.booths.filter(b => b.const === code); }
 function reserveTarget(required) { return Math.ceil(required * (1 + (Number(S.setup.reservePct) || 0) / 100)); }
-function exclusionBlocks(o) { const s = new Set(); [o.homeBlock, o.postingBlock].forEach(b => { const k = blockKey(b); if (k) s.add(k); }); return s; }
-function canServeAt(o, booth) { return !!o && !!booth && !exclusionBlocks(o).has(blockKey(booth.block)); }
+/** Home block and posting block of an officer as block references (used for exclusion). */
+function exclusionBlocks(o) { return [blockRef(o.homeBlockCode, o.homeBlock), blockRef(o.postingBlockCode, o.postingBlock)].filter(r => r.c || r.n); }
+function canServeAt(o, booth) { if (!o || !booth) return false; const br = boothBlockRef(booth); return !exclusionBlocks(o).some(r => sameBlock(r, br)); }
 function boothLabel(b) { return b ? `${b.no}${b.ext && b.ext !== 'Main' ? ' (' + b.ext + ')' : ''}` : ''; }
 
 /** Normalises a free-text duty to one of the six duty labels; returns '' when unknown. */
@@ -508,11 +522,11 @@ function hydrate(st) {
 function addLog(action) { S.log.push({ time: nowStamp(), action }); if (S.log.length > 2000) S.log.shift(); }
 
 function blankOfficer() {
-  return { pin: '', name: '', designation: '', office: '', officeAddress: '', mobile: '', duty: '', homeBlock: '', postingBlock: '', acNo: '', bank: '', branch: '', ifsc: '' };
+  return { pin: '', name: '', designation: '', officeCode: '', office: '', officeAddress: '', mobile: '', duty: '', homeBlockCode: '', homeBlock: '', postingBlockCode: '', postingBlock: '', acNo: '', bank: '', branch: '', ifsc: '' };
 }
 let _boothSeq = 0;
 function newBoothId() { _boothSeq++; return 'B' + Date.now().toString(36) + _boothSeq.toString(36) + randInt(1e6).toString(36); }
-function blankBooth() { return { id: '', no: '', name: '', ext: 'Main', block: '', const: '' }; }
+function blankBooth() { return { id: '', no: '', name: '', ext: 'Main', block: '', blockCode: '', const: '' }; }
 
 /* ---------------- toast / modal ---------------- */
 function toast(msg, kind = '') {
@@ -688,7 +702,7 @@ function validateTraining() {
 function validateOfficers() {
   const errors = [], warnings = [], rowIssues = new Map();
   const seen = new Map();
-  const boothBlocks = new Set(S.booths.map(b => blockKey(b.block)).filter(Boolean));
+  const boothRefs = S.booths.map(boothBlockRef).filter(r => r.c || r.n);
   const add = (i, level, msg) => {
     const r = rowIssues.get(i) || { level: 'warn', msgs: [] };
     if (level === 'err') r.level = 'err';
@@ -701,17 +715,19 @@ function validateOfficers() {
     else seen.set(String(o.pin), i);
     if (!str(o.name)) { add(i, 'err', 'Name missing'); errors.push(`${tag}: name missing.`); }
     if (!DUTIES.some(d => d.label === o.duty)) { add(i, 'err', 'Duty not recognised'); errors.push(`${tag}: duty "${o.duty || ''}" not recognised.`); }
-    if (!str(o.postingBlock)) { add(i, 'err', 'Posting block missing'); errors.push(`${tag}: posting block missing.`); }
-    if (!str(o.homeBlock)) { add(i, 'warn', 'Home block missing'); warnings.push(`${tag}: home block missing — only posting block will be excluded.`); }
-    if (S.setup.ruleDistinctOffice && !str(o.office)) { add(i, 'err', 'Office missing'); errors.push(`${tag}: office name missing (needed for the different-office rule).`); }
+    if (!str(o.postingBlock) && !str(o.postingBlockCode)) { add(i, 'err', 'Posting block missing'); errors.push(`${tag}: posting block (name or code) missing.`); }
+    if (!str(o.homeBlock) && !str(o.homeBlockCode)) { add(i, 'warn', 'Home block missing'); warnings.push(`${tag}: home block (name or code) missing — only posting block will be excluded.`); }
+    if (S.setup.ruleDistinctOffice && !str(o.office) && !str(o.officeCode)) { add(i, 'err', 'Office missing'); errors.push(`${tag}: office name / office code missing (needed for the different-office rule).`); }
     const mob = str(o.mobile).replace(/\D/g, '');
     if (mob && mob.length !== 10) { add(i, 'warn', 'Mobile not 10 digits'); warnings.push(`${tag}: mobile "${o.mobile}" is not 10 digits.`); }
-    if (boothBlocks.size) {
-      [['home', o.homeBlock], ['posting', o.postingBlock]].forEach(([k, v]) => {
-        if (str(v) && !boothBlocks.has(blockKey(v))) { add(i, 'warn', `${k} block not in booth list`); warnings.push(`${tag}: ${k} block "${v}" does not match any booth block — check spelling.`); }
+    if (boothRefs.length) {
+      [['home', o.homeBlockCode, o.homeBlock], ['posting', o.postingBlockCode, o.postingBlock]].forEach(([k, c, n]) => {
+        const r = blockRef(c, n);
+        if ((r.c || r.n) && !boothRefs.some(br => sameBlock(r, br))) { add(i, 'warn', `${k} block not in booth list`); warnings.push(`${tag}: ${k} block "${blockText(c, n)}" does not match any booth block — check spelling / code.`); }
       });
     }
   });
+  warnings.push(...codeConsistencyWarnings());
   return { errors, warnings, rowIssues };
 }
 
@@ -723,7 +739,7 @@ function validateBooths() {
   S.booths.forEach((b, i) => {
     const tag = `Row ${i + 1} (booth ${b.no || '?'})`;
     if (!str(b.no)) { add(i, 'err', 'Booth no missing'); errors.push(`${tag}: booth number missing.`); }
-    if (!str(b.block)) { add(i, 'err', 'Block missing'); errors.push(`${tag}: block missing (needed for home/posting block exclusion).`); }
+    if (!str(b.block) && !str(b.blockCode)) { add(i, 'err', 'Block missing'); errors.push(`${tag}: block name or block code missing (needed for home/posting block exclusion).`); }
     if (!codes.has(b.const)) { add(i, 'err', 'Unknown constituency'); errors.push(`${tag}: constituency "${b.const}" is not defined in Setup.`); }
     const k = b.const + '|' + str(b.no).toUpperCase();
     if (seen.has(k)) { add(i, 'err', 'Duplicate booth'); errors.push(`${tag}: booth ${b.no} repeated in ${b.const} (row ${seen.get(k) + 1}).`); } else seen.set(k, i);
@@ -737,6 +753,26 @@ function validateBooths() {
   return { errors, warnings, rowIssues };
 }
 
+/** Flags codes that look like clerical mistakes. Codes always win over names in the randomisation, so:
+ *  - one name with two codes  → treated as two different offices/blocks (probably a wrong code);
+ *  - one code with two names  → treated as one office/block (spelling variants — harmless, listed for information). */
+function codeConsistencyWarnings() {
+  const w = [];
+  const check = (what, entries) => {
+    const byName = new Map(), byCode = new Map();
+    entries.forEach(([code, name]) => {
+      const c = codeKey(code), n = normText(name); if (!c || !n) return;
+      if (!byName.has(n)) byName.set(n, { label: str(name), codes: new Set() }); byName.get(n).codes.add(c);
+      if (!byCode.has(c)) byCode.set(c, { label: str(code), names: new Set() }); byCode.get(c).names.add(str(name));
+    });
+    byName.forEach(v => { if (v.codes.size > 1) w.push(`${what} "${v.label}" appears with different codes (${[...v.codes].join(', ')}) — treated as DIFFERENT ${what.toLowerCase()}s. Check for a wrong code.`); });
+    byCode.forEach(v => { const ns = [...new Set([...v.names].map(x => normText(x)))]; if (ns.length > 1) w.push(`${what} code ${v.label} has different spellings (${[...v.names].slice(0, 4).join(' / ')}) — treated as ONE ${what.toLowerCase()} (code wins).`); });
+  };
+  check('Office', S.officers.map(o => [o.officeCode, o.office]));
+  check('Block', S.officers.flatMap(o => [[o.homeBlockCode, o.homeBlock], [o.postingBlockCode, o.postingBlock]]).concat(S.booths.map(b => [b.blockCode, b.block])));
+  return w;
+}
+
 /* ---------------- engine helpers ---------------- */
 function buildMeta() {
   const meta = new Map();
@@ -746,8 +782,8 @@ function buildMeta() {
       o, pin: String(o.pin),
       ex: exclusionBlocks(o),
       office: ok || ('__' + o.pin),
-      pb: blockKey(o.postingBlock) || ('__p' + o.pin),
-      hb: blockKey(o.homeBlock) || ('__h' + o.pin),
+      pb: blockId(blockRef(o.postingBlockCode, o.postingBlock)) || ('__p' + o.pin),
+      hb: blockId(blockRef(o.homeBlockCode, o.homeBlock)) || ('__h' + o.pin),
     });
   });
   return meta;
@@ -764,7 +800,8 @@ function memberFits(m, partyState) {
   if (S.setup.ruleDistinctHomeBlock && partyState.hbs.has(m.hb)) return false;
   return true;
 }
-function mServe(m, bKey) { return !bKey || !m.ex.has(bKey); }
+/** Can this officer (meta) serve at a booth with block reference bRef? (null = no booth / reserve) */
+function mServe(m, bRef) { return !bRef || !m.ex.some(r => sameBlock(r, bRef)); }
 
 function pollingPlan() {
   const plan = [];
@@ -790,10 +827,10 @@ function pollingFeasibility() {
   if (!plan.length) probs.push('No booths found. Complete Booth Entry first.');
   PARTY_ROLES.forEach(r => { if (pools[r].length < need) probs.push(`${DUTY_BY_KEY[r].label}: need ${need} (booths + ${S.setup.reservePct}% reserve), available ${pools[r].length}.`); });
   const byBlock = new Map();
-  S.booths.forEach(b => { const k = blockKey(b.block); byBlock.set(k, (byBlock.get(k) || { name: b.block, n: 0 })); byBlock.get(k).n++; });
-  byBlock.forEach((v, k) => {
+  S.booths.forEach(b => { const ref = boothBlockRef(b), k = blockId(ref); if (!byBlock.has(k)) byBlock.set(k, { name: blockText(b.blockCode, b.block), ref, n: 0 }); byBlock.get(k).n++; });
+  byBlock.forEach(v => {
     PARTY_ROLES.forEach(r => {
-      const elig = pools[r].filter(m => !m.ex.has(k)).length;
+      const elig = pools[r].filter(m => mServe(m, v.ref)).length;
       if (elig < v.n) probs.push(`Block "${v.name}" has ${v.n} booth(s) but only ${elig} ${DUTY_BY_KEY[r].label}(s) whose home & posting block are outside it.`);
     });
   });
@@ -827,8 +864,8 @@ function formPollingParties() {
   const meta = buildMeta(), pools = poolsByRole(meta), plan = pollingPlan();
   const mainSlots = [], reserveSlots = [];
   plan.forEach(p => {
-    boothsOf(p.code).forEach(b => mainSlots.push({ code: p.code, bKey: blockKey(b.block) }));
-    for (let i = 0; i < p.target - p.booths; i++) reserveSlots.push({ code: p.code, bKey: '' });
+    boothsOf(p.code).forEach(b => mainSlots.push({ code: p.code, bKey: boothBlockRef(b) }));
+    for (let i = 0; i < p.target - p.booths; i++) reserveSlots.push({ code: p.code, bKey: null });
   });
   const difficulty = s => PARTY_ROLES.reduce((a, r) => a + pools[r].filter(m => mServe(m, s.bKey)).length, 0);
   const MAX = 400;
@@ -871,10 +908,10 @@ function singleFeasibility(kind) {
 function singleBlockShortages(kind, pool, strict) {
   const role = kind === 'pccp' ? 'PM' : 'MO', out = [], byBlock = new Map();
   singlePlan(kind).filter(p => !strict || p.required >= p.booths).forEach(p => boothsOf(p.code).forEach(b => {
-    const k = blockKey(b.block); if (!byBlock.has(k)) byBlock.set(k, { name: b.block, n: 0 }); byBlock.get(k).n++;
+    const ref = boothBlockRef(b), k = blockId(ref); if (!byBlock.has(k)) byBlock.set(k, { name: blockText(b.blockCode, b.block), ref, n: 0 }); byBlock.get(k).n++;
   }));
-  byBlock.forEach((v, k) => {
-    const elig = pool.filter(m => !m.ex.has(k)).length;
+  byBlock.forEach(v => {
+    const elig = pool.filter(m => mServe(m, v.ref)).length;
     if (elig < v.n) out.push(`Block "${v.name}" has ${v.n} booth(s) needing a ${DUTY_BY_KEY[role].label} but only ${elig} whose home & posting block are outside it.`);
   });
   return out;
@@ -894,7 +931,7 @@ function formSingles(kind) {
     for (const p of plan) {
       const booths = shuffle(boothsOf(p.code)).slice(0, p.required);
       for (const b of booths) {
-        const bk = blockKey(b.block);
+        const bk = boothBlockRef(b);
         const m = pickRandom(pools[role].filter(x => !used.has(x.pin) && mServe(x, bk)));
         if (!m) { ok = false; break; }
         used.add(m.pin); out.push({ code: p.code, pin: m.pin });
@@ -990,12 +1027,12 @@ function runAudit() {
     }
     if (S.setup.ruleDistinctPostingBlock) {
       const b4 = [];
-      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => blockKey(offOf(p[r])?.postingBlock)); if (new Set(ks).size !== ks.length) b4.push(`${p.partyNo}: repeated posting block`); });
+      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => { const o = offOf(p[r]) || {}; return blockId(blockRef(o.postingBlockCode, o.postingBlock)); }); if (new Set(ks).size !== ks.length) b4.push(`${p.partyNo}: repeated posting block`); });
       add('2nd – Polling', 'All 4 members have different posting blocks', b4, sec.parties.length);
     }
     if (S.setup.ruleDistinctHomeBlock) {
       const b5 = [];
-      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => blockKey(offOf(p[r])?.homeBlock)); if (new Set(ks).size !== ks.length) b5.push(`${p.partyNo}: repeated home block`); });
+      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => { const o = offOf(p[r]) || {}; return blockId(blockRef(o.homeBlockCode, o.homeBlock)); }); if (new Set(ks).size !== ks.length) b5.push(`${p.partyNo}: repeated home block`); });
       add('2nd – Polling', 'All 4 members have different home blocks', b5, sec.parties.length);
     }
   }
@@ -1027,7 +1064,7 @@ function runAudit() {
       if (!b || !p) { bad1.push(`Tag ${bid} → ${pno} refers to missing booth/party`); return; }
       if (p.const !== b.const) bad1.push(`${pno} (${p.const}) tagged to ${b.const} booth ${b.no}`);
       if (used.has(pno)) bad3.push(`${pno} tagged to two booths`); used.set(pno, bid);
-      PARTY_ROLES.forEach(r => { const o = offOf(p[r]); if (o && !canServeAt(o, b)) bad2.push(`${pno} at booth ${b.const}-${b.no} (${b.block}): ${DUTY_BY_KEY[r].short} ${o.name} has home "${o.homeBlock}" / posting "${o.postingBlock}"`); });
+      PARTY_ROLES.forEach(r => { const o = offOf(p[r]); if (o && !canServeAt(o, b)) bad2.push(`${pno} at booth ${b.const}-${b.no} (${b.block}): ${DUTY_BY_KEY[r].short} ${o.name} has home "${blockText(o.homeBlockCode, o.homeBlock)}" / posting "${blockText(o.postingBlockCode, o.postingBlock)}"`); });
     });
     add('Final – Polling', 'Every booth gets exactly one party of its constituency', bad1, S.booths.length);
     add('Final – Polling', 'No member\'s home block or posting block = booth block', bad2, fp.length * 4);
@@ -1043,7 +1080,7 @@ function runAudit() {
       if (!b || !x) { bad1.push(`Tag ${bid} → ${tags[bid]} refers to missing booth/officer`); return; }
       if (x.const !== b.const) bad1.push(`${x.orderNo} (${x.const}) tagged to ${b.const} booth ${b.no}`);
       if (used.has(x.orderNo)) bad1.push(`${x.orderNo} tagged twice`); used.add(x.orderNo);
-      const o = offOf(x.pin); if (o && !canServeAt(o, b)) bad2.push(`${x.orderNo} ${o.name} at booth ${b.const}-${b.no} (${b.block}): home "${o.homeBlock}" / posting "${o.postingBlock}"`);
+      const o = offOf(x.pin); if (o && !canServeAt(o, b)) bad2.push(`${x.orderNo} ${o.name} at booth ${b.const}-${b.no} (${b.block}): home "${blockText(o.homeBlockCode, o.homeBlock)}" / posting "${blockText(o.postingBlockCode, o.postingBlock)}"`);
     });
     add(nm, 'Tagged count and constituency correct', bad1, ids.length);
     add(nm, 'Home block / posting block ≠ booth block', bad2, ids.length);
@@ -1219,9 +1256,9 @@ VIEWS.setup = () => {
   <div class="card">
     <h3>Randomisation rules</h3>
     <div class="grid g2">
-      <div class="alert info span2" style="margin:0"><b>Always applied:</b> no officer (PrO, P1, P2, P3, PCCP, Micro Observer) is tagged to a booth located in his/her <b>home block</b> or <b>posting block</b>.</div>
+      <div class="alert info span2" style="margin:0"><b>Always applied:</b> no officer (PrO, P1, P2, P3, PCCP, Micro Observer) is tagged to a booth located in his/her <b>home block</b> or <b>posting block</b>. Blocks are matched by <b>block code</b> (e.g. census code) when both the officer and the booth have one; otherwise by block name.</div>
       <label class="check"><input type="checkbox" data-bind="setup.ruleDistinctOffice" ${st.ruleDistinctOffice ? 'checked' : ''} ${dis ? 'disabled' : ''}> <span><b>All 4 members of a polling party must be from different offices</b> (recommended)</span></label>
-      <label class="f">Two officers are “same office” when they have the same…
+      <label class="f">Two officers are “same office” when they have the same <b>Office Code</b>; if an officer has no office code, the same…
         <select data-bind="setup.officeKeyMode" ${dis ? 'disabled' : ''}><option value="name" ${st.officeKeyMode === 'name' ? 'selected' : ''}>Office name (stricter)</option><option value="nameaddr" ${st.officeKeyMode === 'nameaddr' ? 'selected' : ''}>Office name + office address</option></select></label>
       <label class="check"><input type="checkbox" data-bind="setup.ruleDistinctPostingBlock" ${st.ruleDistinctPostingBlock ? 'checked' : ''} ${dis ? 'disabled' : ''}> <span>Also: party members must have different <b>posting</b> blocks (optional, stricter)</span></label>
       <label class="check"><input type="checkbox" data-bind="setup.ruleDistinctHomeBlock" ${st.ruleDistinctHomeBlock ? 'checked' : ''} ${dis ? 'disabled' : ''}> <span>Also: party members must have different <b>home</b> blocks (optional, stricter)</span></label>
@@ -1302,7 +1339,7 @@ VIEWS.officers = () => {
   const dis = S.locks.officers;
   const v = validateOfficers();
   const q = UI.officerQuery.toLowerCase();
-  const rows = S.officers.map((o, i) => ({ o, i })).filter(({ o }) => !q || [o.pin, o.name, o.designation, o.office, o.duty, o.homeBlock, o.postingBlock, o.mobile].some(x => str(x).toLowerCase().includes(q)));
+  const rows = S.officers.map((o, i) => ({ o, i })).filter(({ o }) => !q || [o.pin, o.name, o.designation, o.officeCode, o.office, o.duty, o.homeBlock, o.homeBlockCode, o.postingBlock, o.postingBlockCode, o.mobile].some(x => str(x).toLowerCase().includes(q)));
   const ps = UI.officerPageSize, pages = Math.max(1, Math.ceil(rows.length / ps));
   UI.officerPage = Math.min(Math.max(1, UI.officerPage), pages);
   const slice = rows.slice((UI.officerPage - 1) * ps, UI.officerPage * ps);
@@ -1312,7 +1349,7 @@ VIEWS.officers = () => {
   return `
   <div class="card">
     <div class="card-head"><h2>Officers Database</h2></div>
-    <p class="small muted">Required columns: PIN, Name, Designation, Office Name, Office Address, Mobile, Duty, <b>Home Block</b>, <b>Posting Block</b>. Bank columns are optional (printed on attendance sheets). Blank PIN is auto-generated as District code + serial.</p>
+    <p class="small muted">Required columns: PIN, Name, Designation, Office Name, Office Address, Mobile, Duty, <b>Home Block</b>, <b>Posting Block</b>. Recommended: <b>Office Code</b>, <b>Home Block Code</b>, <b>Posting Block Code</b> (e.g. census block code) — when codes are given they decide “same office” and “same block”, so spelling differences in names do not matter. Codes in [brackets]. Bank columns are optional (printed on attendance sheets). Blank PIN is auto-generated as District code + serial.</p>
     <div class="kpis">${DUTIES.map(d => { const a = officersOfDuty(d.key).length, r = req[d.key]; return kpi(`${d.short} available${r ? ' / needed' : ''}`, r ? `${a} / ${r}` : a, r ? (a >= r ? 'ok' : 'bad') : ''); }).join('')}${kpi('Total', S.officers.length)}</div>
     ${S.booths.length ? '' : '<p class="small muted">“Needed” figures appear once booths are entered (booths + reserve %).</p>'}
     ${lockBar('officers', `
@@ -1330,8 +1367,8 @@ VIEWS.officers = () => {
       <button class="btn sm" data-act="officerPage" data-arg="1" ${UI.officerPage >= pages ? 'disabled' : ''}>Next ›</button></div>
     <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Mobile</th><th>Duty</th><th>Home block</th><th>Posting block</th><th>Issues</th><th></th></tr></thead><tbody>
     ${slice.length ? slice.map(({ o, i }) => { const iss = v.rowIssues.get(i); return `<tr class="${iss ? (iss.level === 'err' ? 'err' : 'warnrow') : ''}">
-      <td>${i + 1}</td><td class="pin">${esc(o.pin)}</td><td><b>${esc(o.name)}</b></td><td>${esc(o.designation)}</td><td>${esc(o.office)}<div class="small muted">${esc(o.officeAddress)}</div></td><td>${esc(o.mobile)}</td>
-      <td>${o.duty ? dutyBadge(o.duty) : '<span class="badge b-bad">?</span>'}</td><td>${esc(o.homeBlock)}</td><td>${esc(o.postingBlock)}</td>
+      <td>${i + 1}</td><td class="pin">${esc(o.pin)}</td><td><b>${esc(o.name)}</b></td><td>${esc(o.designation)}</td><td>${o.officeCode ? `<span class="badge b-info">${esc(o.officeCode)}</span> ` : ''}${esc(o.office)}<div class="small muted">${esc(o.officeAddress)}</div></td><td>${esc(o.mobile)}</td>
+      <td>${o.duty ? dutyBadge(o.duty) : '<span class="badge b-bad">?</span>'}</td><td>${esc(blockText(o.homeBlockCode, o.homeBlock))}</td><td>${esc(blockText(o.postingBlockCode, o.postingBlock))}</td>
       <td class="small">${iss ? esc(iss.msgs.join('; ')) : ''}</td>
       <td class="nowrap"><button class="btn sm" data-act="editOfficer" data-arg="${i}" ${dis ? 'disabled' : ''}>Edit</button> <button class="btn sm ghost-bad" data-act="delOfficer" data-arg="${i}" ${dis ? 'disabled' : ''}>✕</button></td></tr>`; }).join('')
       : '<tr><td colspan="11" class="center muted" style="padding:24px">No officers yet. Import an Excel file or add manually.</td></tr>'}
@@ -1349,9 +1386,10 @@ ACT.editOfficer = idx => {
     title: i >= 0 ? `Edit officer ${o.pin}` : 'Add officer', plain: true,
     body: `<form id="offForm" class="grid g3">
       ${f('pin', 'PIN (blank = auto)')}${f('name', 'Name *')}${f('designation', 'Designation')}
-      ${f('office', 'Office name *')}${f('officeAddress', 'Office address')}${f('mobile', 'Mobile')}
+      ${f('officeCode', 'Office code (recommended)')}${f('office', 'Office name *')}${f('officeAddress', 'Office address')}${f('mobile', 'Mobile')}
       <label class="f">Duty *<select name="duty"><option value="">— select —</option>${DUTIES.map(d => `<option ${o.duty === d.label ? 'selected' : ''}>${esc(d.label)}</option>`).join('')}</select></label>
-      ${f('homeBlock', 'Home block *', 'text', 'list="dlBlocks"')}${f('postingBlock', 'Posting block *', 'text', 'list="dlBlocks"')}
+      ${f('homeBlockCode', 'Home block code')}${f('homeBlock', 'Home block *', 'text', 'list="dlBlocks"')}
+      ${f('postingBlockCode', 'Posting block code')}${f('postingBlock', 'Posting block *', 'text', 'list="dlBlocks"')}
       ${f('acNo', 'Account no')}${f('bank', 'Bank')}${f('branch', 'Branch')}${f('ifsc', 'IFSC')}
       <datalist id="dlBlocks">${blocks.map(b => `<option value="${esc(b)}">`).join('')}</datalist></form>`,
     foot: `<button class="btn" data-close>Cancel</button><button class="btn ok" data-act="saveOfficer" data-arg="${i}">Save</button>`,
@@ -1384,8 +1422,8 @@ VIEWS.booths = () => {
   const v = validateBooths();
   const q = UI.boothQuery.toLowerCase();
   const blocks = {};
-  S.booths.forEach(b => { const k = blockKey(b.block); blocks[k] = blocks[k] || { name: b.block, n: 0 }; blocks[k].n++; });
-  const rows = S.booths.map((b, i) => ({ b, i })).filter(({ b }) => !q || [b.no, b.name, b.block, b.const].some(x => str(x).toLowerCase().includes(q)));
+  S.booths.forEach(b => { const k = blockId(boothBlockRef(b)); blocks[k] = blocks[k] || { name: blockText(b.blockCode, b.block), n: 0 }; blocks[k].n++; });
+  const rows = S.booths.map((b, i) => ({ b, i })).filter(({ b }) => !q || [b.no, b.name, b.block, b.blockCode, b.const].some(x => str(x).toLowerCase().includes(q)));
   return `
   <div class="card">
     <div class="card-head"><h2>Booth Entry</h2><span class="spacer"></span><span class="badge b-info">Independent step</span></div>
@@ -1402,9 +1440,9 @@ VIEWS.booths = () => {
   </div>
   <div class="card">${issuesBox(v, 'Booths')}
     <div class="btn-row" style="margin-bottom:8px"><input type="search" placeholder="Search booth no, location, block…" value="${esc(UI.boothQuery)}" data-inp="boothSearch" style="max-width:360px"></div>
-    <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>Constituency</th><th>Booth no</th><th>Main / Aux</th><th>Location / building</th><th>Block</th><th>Issues</th><th></th></tr></thead><tbody>
+    <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>Constituency</th><th>Booth no</th><th>Main / Aux</th><th>Location / building</th><th>Block [code]</th><th>Issues</th><th></th></tr></thead><tbody>
     ${rows.length ? rows.map(({ b, i }) => { const iss = v.rowIssues.get(i); return `<tr class="${iss ? (iss.level === 'err' ? 'err' : 'warnrow') : ''}">
-      <td>${i + 1}</td><td><span class="badge b-pri">${esc(b.const)}</span></td><td class="pin">${esc(b.no)}</td><td>${esc(b.ext)}</td><td>${esc(b.name)}</td><td>${esc(b.block)}</td>
+      <td>${i + 1}</td><td><span class="badge b-pri">${esc(b.const)}</span></td><td class="pin">${esc(b.no)}</td><td>${esc(b.ext)}</td><td>${esc(b.name)}</td><td>${esc(blockText(b.blockCode, b.block))}</td>
       <td class="small">${iss ? esc(iss.msgs.join('; ')) : ''}</td>
       <td class="nowrap"><button class="btn sm" data-act="editBooth" data-arg="${i}" ${dis ? 'disabled' : ''}>Edit</button> <button class="btn sm ghost-bad" data-act="delBooth" data-arg="${i}" ${dis ? 'disabled' : ''}>✕</button></td></tr>`; }).join('')
       : '<tr><td colspan="8" class="center muted" style="padding:24px">No booths yet. Import an Excel file or add manually.</td></tr>'}
@@ -1424,6 +1462,7 @@ ACT.editBooth = idx => {
       <label class="f">Main / Aux<select name="ext"><option ${b.ext !== 'Aux' ? 'selected' : ''}>Main</option><option ${b.ext === 'Aux' ? 'selected' : ''}>Aux</option></select></label>
       <label class="f span2">Location / building name<input name="name" value="${esc(b.name)}"></label>
       <label class="f">Block *<input name="block" value="${esc(b.block)}" list="dlBlocks2"></label>
+      <label class="f">Block code (e.g. census)<input name="blockCode" value="${esc(b.blockCode)}"></label>
       <datalist id="dlBlocks2">${blocks.map(x => `<option value="${esc(x)}">`).join('')}</datalist></form>`,
     foot: `<button class="btn" data-close>Cancel</button><button class="btn ok" data-act="saveBooth" data-arg="${i}">Save</button>`,
   });
@@ -1431,8 +1470,8 @@ ACT.editBooth = idx => {
 ACT.saveBooth = idx => {
   const i = Number(idx), form = $('#boothForm');
   const b = Object.assign(blankBooth(), { id: i >= 0 ? S.booths[i].id : newBoothId() });
-  ['const', 'no', 'ext', 'name', 'block'].forEach(k => { b[k] = str(form.elements[k].value); });
-  if (!b.no || !b.block) return toast('Booth no and block are required.', 'bad');
+  ['const', 'no', 'ext', 'name', 'block', 'blockCode'].forEach(k => { b[k] = str(form.elements[k].value); });
+  if (!b.no || !(b.block || b.blockCode)) return toast('Booth no and block (name or code) are required.', 'bad');
   if (S.booths.some((x, j) => j !== i && x.const === b.const && str(x.no).toUpperCase() === b.no.toUpperCase())) return toast('This booth number already exists in that constituency.', 'bad');
   if (i >= 0) S.booths[i] = b; else S.booths.push(b);
   persist(); closeTopModal(); render();
@@ -1513,11 +1552,11 @@ VIEWS.second = () => {
       ${list.length && !locked ? `<div class="alert ${bad.length ? 'bad' : 'info'}">${bad.length ? `<b>${bad.length} rule check(s) failed</b> — re-run before locking.` : `Not locked yet — you may re-run as many times as needed, then <b>Verify &amp; Lock ${PART_NAME[kind]}</b>. The other parts are independent.`}</div>` : ''}
       ${probs.length ? `<div class="alert bad"><b>Cannot run yet:</b><ul>${probs.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>` : ''}`;
     if (kind !== 'polling' && !partApplicable(kind)) body = `<div class="alert info">${nm}: required count is 0 for every constituency (see Setup) — nothing to randomise, nothing to lock.</div>`;
-    else if (kind === 'polling') body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Party no</th><th>Const.</th><th>Presiding Officer</th><th>Polling Officer-1</th><th>Polling Officer-2</th><th>Polling Officer-3</th></tr></thead><tbody>
+    else if (kind === 'polling') body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Party no</th><th>Const.</th><th>PrO PIN</th><th>P1 PIN</th><th>P2 PIN</th><th>P3 PIN</th></tr></thead><tbody>
       ${list.length ? list.map(p => `<tr><td><b>${esc(p.partyNo)}</b></td><td>${esc(p.const)}</td>${PARTY_ROLES.map(r => memberCell(p[r])).join('')}</tr>`).join('') : '<tr><td colspan="6" class="center muted" style="padding:20px">Not run yet.</td></tr>'}
       </tbody></table></div>`;
-    else body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Order no</th><th>Const.</th><th>PIN</th><th>Name</th><th>Designation / office</th><th>Home block</th><th>Posting block</th></tr></thead><tbody>
-      ${list.length ? list.map(x => { const o = officerByPin(x.pin) || {}; return `<tr><td><b>${esc(x.orderNo)}</b></td><td>${esc(x.const)}</td><td class="pin">${esc(x.pin)}</td><td>${esc(o.name)}</td><td>${esc(o.designation)}, ${esc(o.office)}</td><td>${esc(o.homeBlock)}</td><td>${esc(o.postingBlock)}</td></tr>`; }).join('') : '<tr><td colspan="7" class="center muted" style="padding:20px">Not run yet.</td></tr>'}
+    else body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Order no</th><th>Const.</th><th>PIN</th></tr></thead><tbody>
+      ${list.length ? list.map(x => `<tr><td><b>${esc(x.orderNo)}</b></td><td>${esc(x.const)}</td><td class="pin">${esc(x.pin)}</td></tr>`).join('') : '<tr><td colspan="3" class="center muted" style="padding:20px">Not run yet.</td></tr>'}
       </tbody></table></div>`;
   } else body = auditHtml(runAudit(), ['2nd']);
   const tabLabel = (k, n) => `${PART_NAME[k]} (${n})${S.parts.second[k] ? ' 🔒' : ''}`;
@@ -1531,15 +1570,14 @@ VIEWS.second = () => {
     </tbody></table></div>
   </div>
   <div class="card">
+    ${SECRECY_NOTE}
     <div class="subtabs">${[['polling', tabLabel('polling', S.second.parties.length)], ['pccp', tabLabel('pccp', S.second.pccp.length)], ['micro', tabLabel('micro', S.second.micro.length)], ['audit', 'Rule verification']].map(([k, l]) => `<button class="${sub === k ? 'active' : ''}" data-act="sub" data-arg="second:${k}">${esc(l)}</button>`).join('')}</div>
     ${body}
   </div>`;
 };
-function memberCell(pin) {
-  const o = officerByPin(pin);
-  if (!o) return `<td class="pin">${esc(pin)}</td>`;
-  return `<td><span class="pin">${esc(o.pin)}</span> ${esc(o.name)}<div class="small muted">${esc(o.office)} · H: ${esc(o.homeBlock)} · P: ${esc(o.postingBlock)}</div></td>`;
-}
+/** Randomisation screens show the PIN only (secrecy). Names / offices / blocks appear only in letters and reports. */
+function memberCell(pin) { return `<td class="pin">${esc(pin)}</td>`; }
+const SECRECY_NOTE = '<div class="alert info">🔒 <b>Secrecy:</b> only PINs are shown during randomisation. Names, designations, offices and blocks appear only in the letters, reports and Excel exports.</div>';
 ACT.sub = arg => { const [v, s] = arg.split(':'); UI.sub[v] = s; render(); };
 ACT.runSecond = kind => {
   if (S.parts.second[kind]) return toast(`${PART_NAME[kind]} is locked. Unlock it to re-run.`, 'bad');
@@ -1590,7 +1628,7 @@ VIEWS.final = () => {
       ${has && !locked ? `<div class="alert ${bad.length ? 'bad' : 'info'}">${bad.length ? `<b>${bad.length} rule check(s) failed</b> — re-run before locking.` : `Not locked yet — re-run as many times as needed, then <b>Verify &amp; Lock ${PART_NAME[kind]}</b>.`}</div>` : ''}`;
     if (kind === 'polling') {
       const reserve = S.second.parties.filter(p => !Object.values(tags).includes(p.partyNo));
-      body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Const.</th><th>Booth</th><th>Block</th><th>Location</th><th>Party</th><th>PrO</th><th>P1</th><th>P2</th><th>P3</th></tr></thead><tbody>
+      body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Const.</th><th>Booth</th><th>Block</th><th>Location</th><th>Party</th><th>PrO PIN</th><th>P1 PIN</th><th>P2 PIN</th><th>P3 PIN</th></tr></thead><tbody>
       ${S.booths.map(b => { const p = S.second.parties.find(x => x.partyNo === tags[b.id]); return `<tr><td>${esc(b.const)}</td><td class="pin">${esc(boothLabel(b))}</td><td><b>${esc(b.block)}</b></td><td>${esc(b.name)}</td><td><b>${p ? esc(p.partyNo) : '—'}</b></td>${p ? PARTY_ROLES.map(r => memberCell(p[r])).join('') : '<td colspan="4" class="muted">not tagged</td>'}</tr>`; }).join('')}
       </tbody></table></div>
       ${has ? `<h4 style="margin-top:14px">Reserve polling parties (${reserve.length})</h4><p class="small">${reserve.map(p => `<span class="badge b-warn">${esc(p.partyNo)}</span>`).join(' ') || '—'}</p>` : ''}`;
@@ -1598,7 +1636,7 @@ VIEWS.final = () => {
     else {
       const list = S.second[kind], plan = singlePlan(kind);
       const reserve = list.filter(x => !Object.values(tags).includes(x.orderNo));
-      body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Const.</th><th>Booth</th><th>Block</th><th>Location</th><th>Order no</th><th>Officer</th></tr></thead><tbody>
+      body = bar + `<div class="tbl-wrap"><table class="t"><thead><tr><th>Const.</th><th>Booth</th><th>Block</th><th>Location</th><th>Order no</th><th>Officer PIN</th></tr></thead><tbody>
       ${S.booths.filter(b => plan.some(p => p.code === b.const)).map(b => { const x = list.find(i => i.orderNo === tags[b.id]); return `<tr><td>${esc(b.const)}</td><td class="pin">${esc(boothLabel(b))}</td><td><b>${esc(b.block)}</b></td><td>${esc(b.name)}</td><td>${x ? `<b>${esc(x.orderNo)}</b>` : '—'}</td>${x ? memberCell(x.pin) : '<td class="muted">not tagged</td>'}</tr>`; }).join('')}
       </tbody></table></div>
       ${has ? `<h4 style="margin-top:14px">Reserve ${PART_NAME[kind]} (${reserve.length})</h4><p class="small">${reserve.map(x => `<span class="badge b-warn">${esc(x.orderNo)}</span>`).join(' ') || '—'}</p>` : ''}`;
@@ -1612,6 +1650,7 @@ VIEWS.final = () => {
     <div class="btn-row"><button class="btn" data-act="go" data-arg="reports">Final letters &amp; reports →</button></div>
   </div>
   <div class="card">
+    ${SECRECY_NOTE}
     <div class="subtabs">${[['polling', tabLabel('polling', `${hasP}/${S.booths.length}`)], ['pccp', tabLabel('pccp', hasC)], ['micro', tabLabel('micro', hasM)], ['audit', 'Rule verification']].map(([k, l]) => `<button class="${sub === k ? 'active' : ''}" data-act="sub" data-arg="final:${k}">${esc(l)}</button>`).join('')}</div>
     ${body}
   </div>`;
@@ -1677,7 +1716,7 @@ function shuffleAnimation(title, pool, done) {
     step += 10;
     const bar = $('#shBar'); if (bar) bar.style.width = step + '%';
     const t = $('#shText'); if (t) t.textContent = step < 40 ? `Shuffling ${pool.length} records…` : step < 80 ? 'Applying home-block / posting-block / office rules…' : 'Finalising…';
-    const rows = $('#shRows'); if (rows) rows.innerHTML = shuffle(pool).slice(0, 6).map(o => `${esc(o.pin)}  ${esc(o.name)}  [${esc(o.postingBlock)}]`).join('<br>');
+    const rows = $('#shRows'); if (rows) rows.innerHTML = shuffle(pool).slice(0, 6).map(o => `PIN ${esc(o.pin)}`).join('<br>');
     if (step < 100) return setTimeout(tick, 90);
     m._close();
     try { done(); } catch (err) { console.error(err); showErrors('Randomisation could not be completed', String(err.message || err).split('\n')); }
@@ -1925,7 +1964,7 @@ const REPORTS = {
   }],
   blockCheck: ['Block exclusion proof (booth vs. member blocks)', () => regDoc('BLOCK EXCLUSION PROOF — every tagged officer vs. booth block', `<table class="lt"><tr><th>Booth</th><th>Booth block</th><th>Role</th><th>Officer</th><th>Office</th><th>Home block</th><th>Posting block</th><th>OK?</th></tr>
     ${S.booths.map(b => { const p = finalPartyOf(b); const rows = []; if (p) PARTY_ROLES.forEach(r => rows.push([DUTY_BY_KEY[r].short, p[r]])); const pc = tagged('pccp', b.id), mo = tagged('micro', b.id); if (pc) rows.push(['PCCP', pc.pin]); if (mo) rows.push(['MO', mo.pin]);
-      return rows.map(([r, pin]) => { const o = officerByPin(pin) || {}; const ok = canServeAt(o, b); return `<tr><td>${esc(b.const)} ${esc(boothLabel(b))}</td><td><b>${esc(b.block)}</b></td><td>${esc(r)}</td><td>${esc(o.name)} (${esc(o.pin)})</td><td>${esc(o.office)}</td><td>${esc(o.homeBlock)}</td><td>${esc(o.postingBlock)}</td><td>${ok ? '✔' : '<b>✖</b>'}</td></tr>`; }).join(''); }).join('')}</table>`)],
+      return rows.map(([r, pin]) => { const o = officerByPin(pin) || {}; const ok = canServeAt(o, b); return `<tr><td>${esc(b.const)} ${esc(boothLabel(b))}</td><td><b>${esc(blockText(b.blockCode, b.block))}</b></td><td>${esc(r)}</td><td>${esc(o.name)} (${esc(o.pin)})</td><td>${esc(blockText(o.officeCode, o.office))}</td><td>${esc(blockText(o.homeBlockCode, o.homeBlock))}</td><td>${esc(blockText(o.postingBlockCode, o.postingBlock))}</td><td>${ok ? '✔' : '<b>✖</b>'}</td></tr>`; }).join(''); }).join('')}</table>`)],
   audit: ['Rule verification report', () => regDoc('RULE VERIFICATION REPORT', auditHtml(runAudit()).replace(/class="t"/g, 'class="lt"'), false)],
   log: ['Audit log (all actions)', () => regDoc('AUDIT LOG', `<table class="lt"><tr><th>Time</th><th>Action</th></tr>${S.log.slice().reverse().map(l => `<tr><td class="nowrap">${esc(l.time)}</td><td>${esc(l.action)}</td></tr>`).join('')}</table>`, false)],
 };
@@ -1987,9 +2026,10 @@ const SETUP_FIELDS = [
 const DATE_FIELDS = new Set(['pollDate', 'letterDate', 'matCollectDate']);
 const TIME_FIELDS = new Set(['pollFrom', 'pollTo', 'matCollectTime']);
 const BOOL_FIELDS = new Set(['ruleDistinctOffice', 'ruleDistinctPostingBlock', 'ruleDistinctHomeBlock']);
-const OFFICER_HEAD = ['PIN', 'Name', 'Designation', 'Office Name', 'Office Address', 'Mobile', 'Duty', 'Home Block', 'Posting Block', 'Account No', 'Bank', 'Branch', 'IFSC'];
-const OFFICER_KEYS = ['pin', 'name', 'designation', 'office', 'officeAddress', 'mobile', 'duty', 'homeBlock', 'postingBlock', 'acNo', 'bank', 'branch', 'ifsc'];
-const BOOTH_HEAD = ['Constituency', 'Booth No', 'Main/Aux', 'Location / Building', 'Block'];
+const OFFICER_HEAD = ['PIN', 'Name', 'Designation', 'Office Code', 'Office Name', 'Office Address', 'Mobile', 'Duty', 'Home Block Code', 'Home Block', 'Posting Block Code', 'Posting Block', 'Account No', 'Bank', 'Branch', 'IFSC'];
+const OFFICER_KEYS = ['pin', 'name', 'designation', 'officeCode', 'office', 'officeAddress', 'mobile', 'duty', 'homeBlockCode', 'homeBlock', 'postingBlockCode', 'postingBlock', 'acNo', 'bank', 'branch', 'ifsc'];
+const OFFICER_WIDTHS = [12, 24, 22, 12, 28, 26, 13, 24, 12, 16, 12, 16, 16, 14, 14, 13];
+const BOOTH_HEAD = ['Constituency', 'Booth No', 'Main/Aux', 'Location / Building', 'Block Code', 'Block'];
 
 function yes(v) { const s = str(v).toLowerCase(); return s === 'yes' || s === 'y' || s === 'true' || s === '1'; }
 function hk(h) { return str(h).toLowerCase().replace(/[^a-z0-9]/g, ''); }
@@ -2028,6 +2068,9 @@ function readme(lines) { const ws = XLSX.utils.aoa_to_sheet(lines.map(l => [l]))
 
 /* ---------- column mapping (tolerant of many header spellings) ---------- */
 const OFFICER_MAP = [
+  ['officeCode', ['officecode', 'officeid', 'officecodeno', 'officeno', 'officecodenumber']],
+  ['homeBlockCode', ['homeblockcode', 'homeblockcensuscode', 'nativeblockcode', 'homecode']],
+  ['postingBlockCode', ['postingblockcode', 'postingblockcensuscode', 'workingblockcode', 'officeblockcode', 'blockcode', 'blockcensuscode']],
   ['pin', ['pin', 'pinno', 'pinnumber', 'employeeid', 'empid', 'empcode', 'employeecode', 'hrmsid', 'hrmsno']],
   ['name', ['name', 'officername', 'employeename', 'nameofofficer', 'nameofemployee', 'fullname', 'staffname', 'nameofthestaff']],
   ['designation', ['designation', 'desig', 'post']],
@@ -2052,6 +2095,11 @@ function officerFromObj(r) {
   Object.keys(r).forEach(h => {
     if (h === '__raw') return;
     let k = mapHeaderKey(h, OFFICER_MAP);
+    if (!k && h.includes('code')) {
+      if (h.includes('home') && h.includes('block')) k = 'homeBlockCode';
+      else if (h.includes('block')) k = 'postingBlockCode';
+      else if (h.includes('office')) k = 'officeCode';
+    }
     if (!k) {
       if (h.includes('home') && h.includes('block')) k = 'homeBlock';
       else if (h.includes('posting') || (h.includes('work') && h.includes('block'))) k = 'postingBlock';
@@ -2073,12 +2121,14 @@ function officerFromObj(r) {
   }
   o.duty = normalizeDuty(o.duty) || o.duty;
   o.mobile = o.mobile.replace(/\.0$/, '');
+  ['officeCode', 'homeBlockCode', 'postingBlockCode'].forEach(k => { o[k] = o[k].replace(/\.0$/, ''); });
   return o;
 }
 const BOOTH_MAP = [
   ['no', ['boothno', 'booth', 'boothnumber', 'psno', 'pollingstationno', 'pollingstationnumber', 'no', 'boothnum', 'sno']],
   ['name', ['location', 'boothlocation', 'boothloacation', 'boothname', 'pollingstationname', 'pollingstation', 'building', 'buildingname', 'locationbuilding', 'locationbuildingname', 'name', 'psname']],
   ['ext', ['ext', 'mainaux', 'boothtype', 'mainauxiliary', 'auxiliary']],
+  ['blockCode', ['blockcode', 'boothblockcode', 'blockcensuscode', 'censusblockcode', 'censuscode']],
   ['block', ['block', 'boothblock', 'blockname', 'prakhand']],
   ['const', ['constituency', 'const', 'constcode', 'constituencycode', 'constituencytype', 'constituencyname']],
   ['type', ['type']],
@@ -2104,6 +2154,7 @@ function boothFromObj(r) {
   });
   if (typeVal) { if (/^(main|aux)/i.test(typeVal)) { if (!b.ext) b.ext = typeVal; } else if (!b.const) b.const = typeVal; }
   b.no = b.no.replace(/\.0$/, '');
+  b.blockCode = b.blockCode.replace(/\.0$/, '');
   b.ext = /aux/i.test(b.ext) ? 'Aux' : 'Main';
   b.const = resolveConst(b.const);
   return b;
@@ -2155,7 +2206,7 @@ function parseTrainingRows(objs) {
   return tr;
 }
 function officerRows(list = S.officers) { return list.map(o => OFFICER_KEYS.map(k => o[k])); }
-function boothRows() { return S.booths.map(b => [b.const, b.no, b.ext, b.name, b.block]); }
+function boothRows() { return S.booths.map(b => [b.const, b.no, b.ext, b.name, b.blockCode, b.block]); }
 
 const README_LINES = [
   'MLC Polling Personnel Randomisation — project workbook',
@@ -2166,9 +2217,9 @@ const README_LINES = [
   '',
   'Officers — Duty must be one of: PRESIDING OFFICER, POLLING OFFICER-1, POLLING OFFICER-2, POLLING OFFICER-3, PATROLLING MAGISTRATE, MICRO OBSERVER',
   '          (short forms PrO, P1, P2, P3, PCCP, MO are also accepted).',
-  'Officers — Home Block and Posting Block are used for exclusion: nobody is tagged to a booth in his/her home or posting block.',
-  'Officers — Office Name is used for the rule that the 4 members of a party must be from different offices.',
-  'Booths   — Constituency must be one of the codes in the Constituencies sheet (e.g. TC, GC). Block is mandatory.',
+  'Officers — Home Block (Code) and Posting Block (Code) are used for exclusion: nobody is tagged to a booth in his/her home or posting block. When both officer and booth have a block code (e.g. census code), the code decides.',
+  'Officers — Office Code (or Office Name if no code) is used for the rule that the 4 members of a party must be from different offices. Codes protect against spelling mistakes in names.',
+  'Booths   — Constituency must be one of the codes in the Constituencies sheet (e.g. TC, GC). Block name or Block Code is mandatory (Block Code recommended).',
   'Dates    — DD-MM-YYYY.  Times — HH:MM (24 hour).',
 ];
 
@@ -2179,8 +2230,8 @@ function buildProjectWorkbook() {
   addSheet(wb, 'Setup', ['Key', 'Field', 'Value'], setupRows(), [24, 52, 70]);
   addSheet(wb, 'Constituencies', ['Code', 'Name', 'PCCP Required', 'Micro Observers Required'], constRows(), [10, 34, 16, 24]);
   addSheet(wb, 'Training', ['Duty', 'Training', 'Date', 'Start', 'End', 'Venue'], trainingRows(), [24, 10, 13, 8, 8, 40]);
-  addSheet(wb, 'Officers', OFFICER_HEAD, officerRows(), [12, 24, 22, 28, 26, 13, 24, 16, 16, 16, 14, 14, 13]);
-  addSheet(wb, 'Booths', BOOTH_HEAD, boothRows(), [13, 10, 10, 44, 18]);
+  addSheet(wb, 'Officers', OFFICER_HEAD, officerRows(), OFFICER_WIDTHS);
+  addSheet(wb, 'Booths', BOOTH_HEAD, boothRows(), [13, 10, 10, 44, 12, 18]);
   const nm = pin => (officerByPin(pin) || {}).name || '';
   addSheet(wb, 'Second_Parties', ['Party No', 'Constituency', 'PrO PIN', 'PrO Name', 'P1 PIN', 'P1 Name', 'P2 PIN', 'P2 Name', 'P3 PIN', 'P3 Name'],
     S.second.parties.map(p => [p.partyNo, p.const, p.PRO, nm(p.PRO), p.P1, nm(p.P1), p.P2, nm(p.P2), p.P3, nm(p.P3)]));
@@ -2341,9 +2392,9 @@ ACT.importLegacyTraining = async () => {
 ACT.officerTemplate = () => {
   const wb = XLSX.utils.book_new();
   addSheet(wb, 'Officers', OFFICER_HEAD, [
-    ['', 'RAMESH KUMAR', 'Headmaster', 'Middle School Piprahi', 'Piprahi', '9000000001', 'PRESIDING OFFICER', 'Sheohar', 'Piprahi', '1234567890', 'SBI', 'Sheohar', 'SBIN0000001'],
-    ['', 'SUNITA DEVI', 'Teacher', 'High School Tariyani', 'Tariyani', '9000000002', 'POLLING OFFICER-1', 'Tariyani', 'Tariyani', '', '', '', ''],
-  ], [12, 24, 22, 28, 26, 13, 24, 16, 16, 16, 14, 14, 13]);
+    ['', 'RAMESH KUMAR', 'Headmaster', '10231', 'Middle School Piprahi', 'Piprahi', '9000000001', 'PRESIDING OFFICER', '0101', 'Sheohar', '0102', 'Piprahi', '1234567890', 'SBI', 'Sheohar', 'SBIN0000001'],
+    ['', 'SUNITA DEVI', 'Teacher', '10458', 'High School Tariyani', 'Tariyani', '9000000002', 'POLLING OFFICER-1', '0105', 'Tariyani', '0105', 'Tariyani', '', '', '', ''],
+  ], OFFICER_WIDTHS);
   XLSX.utils.book_append_sheet(wb, readme(README_LINES.slice(6, 10).concat(['', 'Leave PIN blank to auto-generate it (district code + serial). Delete the two example rows before use.'])), 'Instructions');
   saveWb(wb, 'Officers_Template.xlsx');
 };
@@ -2362,14 +2413,14 @@ ACT.importOfficers = async mode => {
   const v = validateOfficers();
   toast(`${list.length} officers imported. ${v.errors.length} error(s), ${v.warnings.length} warning(s).`, v.errors.length ? 'warn' : 'ok');
 };
-ACT.exportOfficers = () => { const wb = XLSX.utils.book_new(); addSheet(wb, 'Officers', OFFICER_HEAD, officerRows(), [12, 24, 22, 28, 26, 13, 24, 16, 16, 16, 14, 14, 13]); saveWb(wb, `Officers_${safeName(S.setup.district)}.xlsx`); };
+ACT.exportOfficers = () => { const wb = XLSX.utils.book_new(); addSheet(wb, 'Officers', OFFICER_HEAD, officerRows(), OFFICER_WIDTHS); saveWb(wb, `Officers_${safeName(S.setup.district)}.xlsx`); };
 
 /* ---------- booths ---------- */
 ACT.boothTemplate = () => {
   const wb = XLSX.utils.book_new();
   const c1 = (S.constituencies[0] || {}).code || 'TC', c2 = (S.constituencies[1] || {}).code || 'GC';
-  addSheet(wb, 'Booths', BOOTH_HEAD, [[c1, '1', 'Main', 'Upgraded High School, Room 1', 'Piprahi'], [c1, '1A', 'Aux', 'Upgraded High School, Room 2', 'Piprahi'], [c2, '1', 'Main', 'Block Office Hall', 'Tariyani']], [13, 10, 10, 44, 18]);
-  XLSX.utils.book_append_sheet(wb, readme(['Constituency = a code from Setup (' + S.constituencies.map(c => c.code).join(', ') + ').', 'Main/Aux = Main or Aux.', 'Block is mandatory — officers whose home or posting block is this block are never tagged to this booth.', 'Delete the example rows before use.']), 'Instructions');
+  addSheet(wb, 'Booths', BOOTH_HEAD, [[c1, '1', 'Main', 'Upgraded High School, Room 1', '0102', 'Piprahi'], [c1, '1A', 'Aux', 'Upgraded High School, Room 2', '0102', 'Piprahi'], [c2, '1', 'Main', 'Block Office Hall', '0105', 'Tariyani']], [13, 10, 10, 44, 12, 18]);
+  XLSX.utils.book_append_sheet(wb, readme(['Constituency = a code from Setup (' + S.constituencies.map(c => c.code).join(', ') + ').', 'Main/Aux = Main or Aux.', 'Block is mandatory — officers whose home or posting block is this block are never tagged to this booth.', 'Block Code (e.g. census block code) is recommended: when the booth and the officer both have a code, the code decides and spelling of the name does not matter.', 'Delete the example rows before use.']), 'Instructions');
   saveWb(wb, 'Booths_Template.xlsx');
 };
 ACT.importBooths = async mode => {
@@ -2386,7 +2437,7 @@ ACT.importBooths = async mode => {
   const v = validateBooths();
   toast(`${list.length} booths imported. ${v.errors.length} error(s), ${v.warnings.length} warning(s).`, v.errors.length ? 'warn' : 'ok');
 };
-ACT.exportBooths = () => { const wb = XLSX.utils.book_new(); addSheet(wb, 'Booths', BOOTH_HEAD, boothRows(), [13, 10, 10, 44, 18]); saveWb(wb, `Booths_${safeName(S.setup.district)}.xlsx`); };
+ACT.exportBooths = () => { const wb = XLSX.utils.book_new(); addSheet(wb, 'Booths', BOOTH_HEAD, boothRows(), [13, 10, 10, 44, 12, 18]); saveWb(wb, `Booths_${safeName(S.setup.district)}.xlsx`); };
 
 /* ---------- letters / results ---------- */
 ACT.exportLetter1 = () => {
@@ -2478,12 +2529,16 @@ function generateTestState(profileKey) {
       { date: '2026-10-22', start: '11:00', end: '13:00', venue: 'At Briefing Place' },
     ];
   });
+  // fictitious block codes (stand-in for census block codes) and office codes
+  const bCode = {}; P.blocks.forEach((bl, i) => { bCode[bl] = P.distCode + pad(i + 1, 2); });
+  const oCode = {}; let oSeq = 1;
+  const officeCodeOf = name => (oCode[name] = oCode[name] || P.distCode + pad(oSeq++, 3));
   // booths: spread across blocks
   P.cons.forEach(c => {
     for (let i = 1; i <= c.booths; i++) {
       const block = P.blocks[(i - 1 + (c.code === 'GC' ? 2 : 0)) % P.blocks.length];
       const aux = i % 7 === 0;
-      st.booths.push({ id: newBoothId(), const: c.code, no: aux ? `${i - 1}A` : String(i), ext: aux ? 'Aux' : 'Main', name: `${pickRandom(['Middle School', 'High School', 'Block Office Hall', 'Panchayat Bhawan', 'Kanya Middle School'])} ${block}, Room ${1 + (i % 3)}`, block });
+      st.booths.push({ id: newBoothId(), const: c.code, blockCode: bCode[block], no: aux ? `${i - 1}A` : String(i), ext: aux ? 'Aux' : 'Main', name: `${pickRandom(['Middle School', 'High School', 'Block Office Hall', 'Panchayat Bhawan', 'Kanya Middle School'])} ${block}, Room ${1 + (i % 3)}`, block });
     }
   });
   // officers
@@ -2505,8 +2560,8 @@ function generateTestState(profileKey) {
       else { posting = pickRandom(P.blocks); office = `${pickRandom(OFFICE_TYPES.party)} ${posting}${randInt(3) === 0 ? '' : ' No.' + (1 + randInt(4))}`; }
       const home = randInt(100) < 40 ? posting : pickRandom(P.blocks);
       st.officers.push({
-        pin: P.distCode + pad(serial, 5), name, designation: pickRandom(DESIG[d.key]), office, officeAddress: `${posting}, ${P.district}`,
-        mobile: '90' + P.distCode + pad(serial, 6), duty: d.label, homeBlock: home, postingBlock: posting,
+        pin: P.distCode + pad(serial, 5), name, designation: pickRandom(DESIG[d.key]), officeCode: officeCodeOf(office), office, officeAddress: `${posting}, ${P.district}`,
+        mobile: '90' + P.distCode + pad(serial, 6), duty: d.label, homeBlockCode: bCode[home], homeBlock: home, postingBlockCode: bCode[posting], postingBlock: posting,
         acNo: String(30000000000 + serial * 7919), bank: 'State Bank of India', branch: P.district, ifsc: 'SBIN000' + pad(1000 + randInt(8999), 4),
       });
       serial++;
@@ -2520,13 +2575,15 @@ function generateErrorState() {
   const st = generateTestState('small');
   const o = st.officers;
   o[0].pin = o[1].pin; // duplicate PIN
-  o[2].postingBlock = ''; // missing posting block
+  o[2].postingBlock = ''; o[2].postingBlockCode = ''; // missing posting block
   o[3].duty = 'DRIVER'; // unknown duty
-  o[4].office = ''; // missing office
+  o[4].office = ''; o[4].officeCode = ''; // missing office
   o[5].mobile = '98765'; // short mobile
-  o[6].homeBlock = 'Piprahee'; // misspelt block
+  o[6].homeBlock = 'Piprahee'; o[6].homeBlockCode = ''; // misspelt block, no code to rescue it
+  o[8].officeCode = o[9].officeCode = '99999'; o[9].office = 'Some Other Office'; // one code, two names
+  o[10].postingBlockCode = '7777'; // block name with a wrong code
   o[7].homeBlock = '';
-  st.booths[0].block = '';
+  st.booths[0].block = ''; st.booths[0].blockCode = '';
   st.booths[1].const = 'XC';
   st.booths[3].no = st.booths[2].no; st.booths[3].const = st.booths[2].const;
   st.log = [{ time: nowStamp(), action: 'Test data WITH DELIBERATE ERRORS generated (for testing validation)' }];

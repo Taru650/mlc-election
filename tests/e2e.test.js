@@ -210,13 +210,14 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
     __MLC.S = __MLC.generateTestState('small');
     const S = __MLC.S;
     // every Presiding Officer either lives or works in Piprahi → no PrO for Piprahi booths
-    S.officers.filter(o => o.duty === 'PRESIDING OFFICER').forEach(o => { o.homeBlock = 'Piprahi'; });
+    const pc = S.booths.find(b => b.block === 'Piprahi').blockCode;
+    S.officers.filter(o => o.duty === 'PRESIDING OFFICER').forEach(o => { o.homeBlock = 'Piprahi'; o.homeBlockCode = pc; });
     try { __MLC.formPollingParties(); return 'formed'; } catch (e) { return e.message; }
   });
   ok(/Piprahi/.test(inf) && /PRESIDING OFFICER/.test(inf), 'refuses and names block + duty: ' + inf.split('\n')[1]);
   const inf2 = await page.evaluate(() => {
     __MLC.S = __MLC.generateTestState('small');
-    __MLC.S.officers.filter(o => ['PRESIDING OFFICER', 'POLLING OFFICER-1'].includes(o.duty)).forEach(o => { o.office = 'Same Office'; });
+    __MLC.S.officers.filter(o => ['PRESIDING OFFICER', 'POLLING OFFICER-1'].includes(o.duty)).forEach(o => { o.office = 'Same Office'; o.officeCode = ''; });
     try { __MLC.formPollingParties(); return 'formed'; } catch (e) { return e.message; }
   });
   ok(/different|tight|offices/i.test(inf2), 'different-office rule enforced when PrO and P1 all share one office: ' + inf2.slice(0, 90));
@@ -234,22 +235,92 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
     __MLC.S = __MLC.generateTestState('small');
     const S = __MLC.S, blocks = [...new Set(S.booths.map(b => b.block))];
     // tight: every PCCP/MO has home and posting block inside booth blocks
-    S.officers.filter(o => /PATROLLING|MICRO/.test(o.duty)).forEach((o, i) => { o.homeBlock = blocks[i % blocks.length]; o.postingBlock = blocks[(i + 1) % blocks.length]; });
+    const codeOf = n => S.booths.find(b => b.block === n).blockCode;
+    S.officers.filter(o => /PATROLLING|MICRO/.test(o.duty)).forEach((o, i) => { o.homeBlock = blocks[i % blocks.length]; o.postingBlock = blocks[(i + 1) % blocks.length]; o.homeBlockCode = codeOf(o.homeBlock); o.postingBlockCode = codeOf(o.postingBlock); });
     for (let i = 0; i < 150; i++) { const [a, c] = run(S); n += a; bad += c; }
-    __MLC.S = __MLC.generateTestState('small'); const X = __MLC.S.booths[0].block;
-    __MLC.S.officers.filter(o => o.duty === 'MICRO OBSERVER').forEach(o => { o.homeBlock = X; });
+    __MLC.S = __MLC.generateTestState('small'); const X = __MLC.S.booths[0].block, XC = __MLC.S.booths[0].blockCode;
+    __MLC.S.officers.filter(o => o.duty === 'MICRO OBSERVER').forEach(o => { o.homeBlock = X; o.homeBlockCode = XC; });
     let msg = 'placed'; try { __MLC.formSingles('micro'); } catch (e) { msg = e.message; }
     return { n, bad, msg, X };
   });
   ok(pm.n === 150 * 24 && pm.bad === 0, `${pm.n} PCCP/MO tags on tight data, ${pm.bad} in own home/posting block`);
   ok(pm.msg.includes(pm.X) && /MICRO OBSERVER/.test(pm.msg), 'impossible MO data refused, naming the block: ' + pm.msg.split('\n')[1]);
 
+  console.log('7c. Codes decide "same office" and "same block" — spelling mistakes do not matter');
+  const codes = await page.evaluate(() => {
+    const res = {};
+    // (a) all PrO and P1 share one OFFICE CODE but every office NAME is spelt differently → must still count as one office
+    __MLC.S = __MLC.generateTestState('small');
+    __MLC.S.officers.filter(o => ['PRESIDING OFFICER', 'POLLING OFFICER-1'].includes(o.duty)).forEach((o, i) => { o.officeCode = '55555'; o.office = 'Office spelling ' + i; });
+    try { __MLC.formPollingParties(); res.sameCode = 'formed'; } catch (e) { res.sameCode = 'refused'; }
+    // (b) identical office NAME for everybody but distinct OFFICE CODES → treated as different offices → parties form
+    __MLC.S = __MLC.generateTestState('small');
+    __MLC.S.officers.forEach((o, i) => { o.office = 'Middle School'; o.officeCode = 'X' + i; });
+    try { res.diffCode = __MLC.formPollingParties().parties.length; } catch (e) { res.diffCode = e.message; }
+    // (c) block NAMES misspelt for every officer, codes correct → exclusion still applied by code
+    __MLC.S = __MLC.generateTestState('small');
+    const S = __MLC.S;
+    S.officers.forEach(o => { o.homeBlock = o.homeBlock + ' xx'; o.postingBlock = 'P-' + o.postingBlock.toUpperCase() + 'aa'; });
+    let viol = 0, tags = 0;
+    for (let i = 0; i < 60; i++) {
+      S.second.parties = __MLC.formPollingParties().parties; S.second.pccp = __MLC.formSingles('pccp').items; S.second.micro = __MLC.formSingles('micro').items;
+      S.final.polling = __MLC.finalPolling(); S.final.pccp = __MLC.finalSingles('pccp'); S.final.micro = __MLC.finalSingles('micro');
+      const byCode = pin => { const o = S.officers.find(x => x.pin === pin); return [o.homeBlockCode, o.postingBlockCode]; };
+      Object.entries(S.final.polling).forEach(([bid, pno]) => { const b = S.booths.find(x => x.id === bid), p = S.second.parties.find(x => x.partyNo === pno);
+        ['PRO', 'P1', 'P2', 'P3'].forEach(r => { tags++; if (byCode(p[r]).includes(b.blockCode)) viol++; }); });
+      ['pccp', 'micro'].forEach(k => Object.entries(S.final[k]).forEach(([bid, ord]) => { const b = S.booths.find(x => x.id === bid), it = S.second[k].find(x => x.orderNo === ord); tags++; if (byCode(it.pin).includes(b.blockCode)) viol++; }));
+    }
+    res.viol = viol; res.tags = tags;
+    // (d) without codes, the same misspelling WOULD defeat the name match — proves codes are what protects
+    S.officers.forEach(o => { o.homeBlockCode = ''; o.postingBlockCode = ''; });
+    S.booths.forEach(b => { b.blockCode = ''; });
+    S.final.polling = __MLC.finalPolling();
+    res.namesOnlyBlind = Object.entries(S.final.polling).some(([bid, pno]) => { const b = S.booths.find(x => x.id === bid), p = S.second.parties.find(x => x.partyNo === pno); return ['PRO', 'P1', 'P2', 'P3'].some(r => S.officers.find(x => x.pin === p[r]).postingBlock.toLowerCase().includes(b.block.toLowerCase())); });
+    return res;
+  });
+  ok(codes.sameCode === 'refused', 'same office code + different spellings → treated as ONE office (different-office rule binds)');
+  ok(codes.diffCode === 14, 'same office name + different codes → treated as different offices');
+  ok(codes.viol === 0 && codes.tags > 3000, `misspelt block names, correct codes: ${codes.tags} tags, ${codes.viol} in own home/posting block`);
+  ok(codes.namesOnlyBlind === true, 'control: with codes removed, misspelt names alone would not have been caught');
+
+  console.log('7d. Secrecy — randomisation screens show PINs only');
+  const secrecy = await page.evaluate(async () => {
+    __MLC.S = __MLC.generateTestState('small'); const S = __MLC.S;
+    ['setup', 'training', 'officers', 'booths'].forEach(m => { S.locks[m] = true; });
+    S.second.parties = __MLC.formPollingParties().parties; S.second.pccp = __MLC.formSingles('pccp').items; S.second.micro = __MLC.formSingles('micro').items;
+    ['polling', 'pccp', 'micro'].forEach(k => { S.parts.second[k] = true; });
+    S.final.polling = __MLC.finalPolling(); S.final.pccp = __MLC.finalSingles('pccp'); S.final.micro = __MLC.finalSingles('micro');
+    const leaks = [];
+    for (const [view, subs] of [['second', ['polling', 'pccp', 'micro']], ['final', ['polling', 'pccp', 'micro']]]) {
+      for (const sub of subs) {
+        __MLC.ACT.go(view); __MLC.ACT.sub(view + ':' + sub);
+        const text = document.querySelector('#view').innerText;
+        const parties = view === 'final' ? S.second.parties.filter(p => Object.values(S.final.polling).includes(p.partyNo)) : S.second.parties;
+        const singles = sub === 'polling' ? [] : view === 'final' ? S.second[sub].filter(x => Object.values(S.final[sub]).includes(x.orderNo)) : S.second[sub];
+        const list = sub === 'polling' ? parties.flatMap(p => [p.PRO, p.P1, p.P2, p.P3]) : singles.map(x => x.pin);
+        const offs = list.map(pin => S.officers.find(o => o.pin === pin));
+        // booth locations may legitimately contain office-like words, so offices are checked on the 2nd screen only
+        offs.forEach(o => { [o.name, o.mobile, view === 'second' ? o.office : ''].forEach(v => { if (v && text.includes(v)) leaks.push(`${view}/${sub}: ${v}`); }); });
+        if (!offs.every(o => text.includes(o.pin))) leaks.push(`${view}/${sub}: PINs missing`);
+      }
+    }
+    // letters still carry full details
+    S.parts.final.polling = true; __MLC.ACT.finalLetters('polling');
+    const letter = document.querySelector('#docBody').innerText; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    const p = S.second.parties.find(x => x.partyNo === S.final.polling[S.booths[0].id]); const pro = S.officers.find(o => o.pin === p.PRO);
+    return { leaks: leaks.slice(0, 5), n: leaks.length, letterHasName: letter.includes(pro.name) && letter.includes(pro.designation) };
+  });
+  ok(secrecy.n === 0, 'no name / office / designation / mobile on 2nd or final randomisation screens ' + secrecy.leaks.join(' | '));
+  ok(secrecy.letterHasName, 'final letters still show full name and designation');
+
   console.log('8. Validation catches bad data');
   const v = await page.evaluate(() => { __MLC.S = __MLC.generateErrorState(); return { o: __MLC.validateOfficers().errors, ow: __MLC.validateOfficers().warnings, b: __MLC.validateBooths().errors }; });
-  ok(v.o.some(e => /duplicate PIN/.test(e)), 'duplicate PIN'); ok(v.o.some(e => /posting block missing/.test(e)), 'missing posting block');
-  ok(v.o.some(e => /DRIVER/.test(e)), 'unknown duty'); ok(v.o.some(e => /office name missing/.test(e)), 'missing office');
+  ok(v.o.some(e => /duplicate PIN/.test(e)), 'duplicate PIN'); ok(v.o.some(e => /posting block \(name or code\) missing/.test(e)), 'missing posting block');
+  ok(v.o.some(e => /DRIVER/.test(e)), 'unknown duty'); ok(v.o.some(e => /office name \/ office code missing/.test(e)), 'missing office');
   ok(v.ow.some(e => /Piprahee/.test(e)), 'misspelt block warning'); ok(v.ow.some(e => /98765/.test(e)), 'short mobile warning');
-  ok(v.b.some(e => /block missing/.test(e)) && v.b.some(e => /XC/.test(e)) && v.b.some(e => /repeated/.test(e)), 'booth errors (no block, unknown constituency, duplicate)');
+  ok(v.ow.some(e => /code 99999 has different spellings/.test(e)), 'warns: one office code used with two names');
+  ok(v.ow.some(e => /different codes/.test(e) && /7777/.test(e)), 'warns: block name appearing with a different code');
+  ok(v.b.some(e => /block name or block code missing/.test(e)) && v.b.some(e => /XC/.test(e)) && v.b.some(e => /repeated/.test(e)), 'booth errors (no block, unknown constituency, duplicate)');
 
   console.log('9. Booth entry is independent of officers / training / 1st letter');
   const indep = await page.evaluate(() => {

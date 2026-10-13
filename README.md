@@ -38,15 +38,22 @@ computer. The project Excel file is the real backup.
 ## Rules enforced
 
 * A polling party is 1 Presiding Officer + P1 + P2 + P3.
-* **All four members of a party are from different offices** (on by default; “same office”
-  means same office name, or optionally name + address).
+* **All four members of a party are from different offices** (on by default). “Same office” means
+  the same **Office Code**; only when an officer has no office code is the office name used
+  (optionally name + address).
 * **Nobody is tagged to a booth whose block is his/her home block or posting block** —
   applied to every PrO, P1, P2, P3, PCCP (Patrolling Magistrate) and Micro Observer.
 * Optional, stricter: party members must have different posting blocks / home blocks.
 * Party count per constituency = booths + reserve %; PCCP and Micro Observer counts =
   required (from Setup) + reserve %.
-* Block names are compared loosely (case, spaces, punctuation and the word “block” are ignored),
-  so “Dumri Katsari”, “dumri-katsari” and “Dumri Katsari Block” are the same block.
+* Blocks are matched by **block code** (e.g. 2011 census block code) whenever both the officer
+  and the booth have one — spelling of the name then does not matter. Without a code, names are
+  compared loosely (case, spaces, punctuation and the word “block” ignored). Codes ignore
+  spaces and leading zeros (`0101` = `101`). The tool warns when one name appears with two
+  codes (likely a wrong code) or one code with two spellings (harmless; code wins).
+* **Secrecy:** the 2nd and final randomisation screens (and the shuffle animation) show only
+  PINs. Names, designations, offices, mobiles and blocks appear only in letters, reports,
+  attendance sheets and Excel exports.
 
 How it is guaranteed: in the 2nd randomisation every main party is formed against a
 hidden random booth so a valid assignment always exists; the final randomisation is
@@ -66,13 +73,14 @@ block that has booths), the tool says exactly which block and duty is short.
 prepared or corrected in Excel. Randomisation sheets are re-verified on opening and
 discarded if any rule is broken.
 
-**Officers** columns: `PIN, Name, Designation, Office Name, Office Address, Mobile, Duty,
-Home Block, Posting Block, Account No, Bank, Branch, IFSC`. Duty may be written as
+**Officers** columns: `PIN, Name, Designation, Office Code, Office Name, Office Address, Mobile,
+Duty, Home Block Code, Home Block, Posting Block Code, Posting Block, Account No, Bank, Branch, IFSC`.
+Code columns are optional but recommended. Duty may be written as
 `PRESIDING OFFICER / POLLING OFFICER-1 / -2 / -3 / PATROLLING MAGISTRATE / MICRO OBSERVER`
 or `PrO / P1 / P2 / P3 / PCCP / MO`. Blank PIN → district code + serial. Many alternate
 header spellings are recognised (e.g. the earlier tool's `officername`, `officename`, `block`).
 
-**Booths** columns: `Constituency, Booth No, Main/Aux, Location / Building, Block`.
+**Booths** columns: `Constituency, Booth No, Main/Aux, Location / Building, Block Code, Block`.
 Constituency is a code from Setup (e.g. `TC`, `GC`) or a name containing “Teachers”/“Graduates”.
 
 Dates are `DD-MM-YYYY` (ISO and Excel dates also accepted); times `HH:MM`.
