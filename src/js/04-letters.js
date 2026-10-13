@@ -175,8 +175,8 @@ const REPORTS = {
     <h4>Reserve Micro Observers</h4><table class="lt"><tr><th>Order</th><th>Const.</th><th>Officer</th></tr>${(S.parts.final.micro ? reserveSingles('micro') : []).map(x => `<tr><td>${esc(x.orderNo)}</td><td>${esc(x.const)}</td><td>${nameMob(x.pin)}</td></tr>`).join('')}</table>`)],
   remaining: ['Officers not selected in 2nd randomisation', () => {
     const used = new Set(); S.second.parties.forEach(p => PARTY_ROLES.forEach(r => used.add(String(p[r])))); S.second.pccp.forEach(x => used.add(String(x.pin))); S.second.micro.forEach(x => used.add(String(x.pin)));
-    const rows = S.officers.filter(o => !used.has(String(o.pin)));
-    return regDoc('OFFICERS NOT SELECTED IN 2ND RANDOMISATION', `<table class="lt"><tr><th>Sl</th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Duty</th><th>Home block</th><th>Posting block</th><th>Mobile</th></tr>${rows.map((o, i) => `<tr><td>${i + 1}</td><td>${esc(o.pin)}</td><td>${esc(o.name)}</td><td>${esc(o.designation)}</td><td>${esc(o.office)}</td><td>${esc(o.duty)}</td><td>${esc(o.homeBlock)}</td><td>${esc(o.postingBlock)}</td><td>${esc(o.mobile)}</td></tr>`).join('')}</table>`);
+    const rows = S.officers.filter(o => !used.has(String(o.pin)) && !isExempt(o.pin));
+    return regDoc('OFFICERS NOT SELECTED IN 2ND RANDOMISATION (exempted officers listed separately)', `<table class="lt"><tr><th>Sl</th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Duty</th><th>Home block</th><th>Posting block</th><th>Mobile</th></tr>${rows.map((o, i) => `<tr><td>${i + 1}</td><td>${esc(o.pin)}</td><td>${esc(o.name)}</td><td>${esc(o.designation)}</td><td>${esc(o.office)}</td><td>${esc(o.duty)}</td><td>${esc(o.homeBlock)}</td><td>${esc(o.postingBlock)}</td><td>${esc(o.mobile)}</td></tr>`).join('')}</table>`);
   }],
   blockCheck: ['Block exclusion proof (booth vs. member blocks)', () => regDoc('BLOCK EXCLUSION PROOF — every tagged officer vs. booth block', `<table class="lt"><tr><th>Booth</th><th>Booth block</th><th>Role</th><th>Officer</th><th>Office</th><th>Home block</th><th>Posting block</th><th>OK?</th></tr>
     ${S.booths.map(b => { const p = finalPartyOf(b); const rows = []; if (p) PARTY_ROLES.forEach(r => rows.push([DUTY_BY_KEY[r].short, p[r]])); const pc = tagged('pccp', b.id), mo = tagged('micro', b.id); if (pc) rows.push(['PCCP', pc.pin]); if (mo) rows.push(['MO', mo.pin]);
@@ -200,7 +200,7 @@ VIEWS.reports = () => {
       ${card('Final letters — main parties', 'Booth disclosed.', b('finalLetters', 'polling', 'Open', fp.polling))}
       ${card('Final letters — PCCP / MO', 'Booth disclosed.', b('finalLetters', 'pccp', 'PCCP', fp.pccp && S.second.pccp.length) + b('finalLetters', 'micro', 'Micro Obs.', fp.micro && S.second.micro.length))}
       ${card('Final letters — reserve', 'One letter per reserve officer of each locked part.', b('finalLetters', 'reserve', 'Open', PART_KINDS.some(k => fp[k])))}
-      ${Object.entries(REPORTS).map(([k, [t]]) => card(t, k === 'remaining' ? 'After 2nd randomisation.' : k === 'audit' || k === 'log' ? 'Any time.' : 'After final randomisation.', b('report', k, 'Open', k === 'audit' || k === 'log' || (k === 'remaining' ? S.second.parties.length > 0 : fin)))).join('')}
+      ${Object.entries(REPORTS).map(([k, [t]]) => card(t, k === 'remaining' ? 'After 2nd randomisation.' : k === 'audit' || k === 'log' ? 'Any time.' : k === 'exempted' ? 'Officers withdrawn, with reasons.' : 'After final randomisation.', b('report', k, 'Open', k === 'audit' || k === 'log' || (k === 'exempted' && Object.keys(S.exempt).length > 0) || (k !== 'exempted' && (k === 'remaining' ? S.second.parties.length > 0 : fin))))).join('')}
     </div></div>
     <div class="card"><div class="card-head"><h3>Excel exports</h3></div><div class="btn-row">
       <button class="btn" data-act="exportSecond" ${S.second.parties.length ? '' : 'disabled'}>2nd randomisation (Excel)</button>

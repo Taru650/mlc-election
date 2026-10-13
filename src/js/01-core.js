@@ -66,6 +66,7 @@ function defaultState() {
     ],
     training: emptyTraining(),
     officers: [],
+    exempt: {}, // PIN -> { category, reason, orderRef, date, at } — kept out of 2nd and final randomisation
     booths: [],
     second: { parties: [], pccp: [], micro: [], ran: {} },
     final: { polling: {}, pccp: {}, micro: {}, ran: {} },
@@ -193,6 +194,9 @@ function constByCode(code) { return S.constituencies.find(c => c.code === code) 
 function constName(code) { const c = constByCode(code); return c ? (c.name || c.code) : code; }
 function dutyKeyFromLabel(label) { const d = DUTIES.find(x => x.label === label); return d ? d.key : ''; }
 function officersOfDuty(key) { const lbl = DUTY_BY_KEY[key].label; return S.officers.filter(o => o.duty === lbl); }
+function isExempt(pin) { return !!(S.exempt && S.exempt[String(pin)]); }
+/** Officers of a duty who are available for randomisation (not exempted). */
+function availableOfDuty(key) { return officersOfDuty(key).filter(o => !isExempt(o.pin)); }
 function boothsOf(code) { return S.booths.filter(b => b.const === code); }
 function reserveTarget(required) { return Math.ceil(required * (1 + (Number(S.setup.reservePct) || 0) / 100)); }
 /** Home block and posting block of an officer as block references (used for exclusion). */
@@ -274,6 +278,7 @@ function hydrate(st) {
   out.officers = (out.officers || []).map(o => Object.assign(blankOfficer(), o));
   out.booths = (out.booths || []).map(b => Object.assign(blankBooth(), b));
   out.log = out.log || [];
+  out.exempt = (st && st.exempt && typeof st.exempt === 'object') ? st.exempt : {};
   return out;
 }
 function addLog(action) { S.log.push({ time: nowStamp(), action }); if (S.log.length > 2000) S.log.shift(); }
@@ -319,6 +324,7 @@ const MODULES = [
   { id: 'officers', label: 'Officers Database',    grp: 'Data entry', lock: 'officers' },
   { id: 'booths',   label: 'Booth Entry',          grp: 'Data entry', lock: 'booths' },
   { id: 'letter1',  label: '1st Appointment Letter', grp: 'Letters & Randomisation', lock: 'letter1' },
+  { id: 'exempt',   label: 'Exemptions',           grp: 'Letters & Randomisation' },
   { id: 'second',   label: '2nd Randomisation',    grp: 'Letters & Randomisation', lock: 'second' },
   { id: 'final',    label: 'Final Randomisation',  grp: 'Letters & Randomisation', lock: 'final' },
   { id: 'reports',  label: 'Reports & Letters',    grp: 'Output' },
@@ -329,6 +335,7 @@ function prereqs(id) {
   if (id === 'officers' && !L.setup) miss.push('Election Setup');
   if (id === 'booths' && !L.setup) miss.push('Election Setup');
   if (id === 'letter1') { if (!L.officers) miss.push('Officers Database'); if (!L.training) miss.push('Training Schedule'); if (!L.setup) miss.push('Election Setup'); }
+  if (id === 'exempt' && !L.officers) miss.push('Officers Database');
   if (id === 'second') { if (!L.setup) miss.push('Election Setup'); if (!L.officers) miss.push('Officers Database'); if (!L.booths) miss.push('Booth Entry'); }
   if (id === 'final') { if (!PART_KINDS.some(k => partApplicable(k) && S.parts.second[k])) miss.push('at least one part of the 2nd Randomisation'); }
   return miss;

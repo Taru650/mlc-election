@@ -144,6 +144,7 @@ function distinctBlockId(r, fallback) { return isOutside(r) ? fallback : (blockI
 function buildMeta() {
   const meta = new Map();
   S.officers.forEach(o => {
+    if (isExempt(o.pin)) return; // exempted officers never enter the 2nd / final randomisation
     const ok = officeKey(o);
     meta.set(String(o.pin), {
       o, pin: String(o.pin),
@@ -420,6 +421,8 @@ function runAudit() {
     const seen = new Map(), bad = [];
     all.forEach(([pin, where]) => { if (seen.has(pin)) bad.push(`PIN ${pin} used in ${seen.get(pin)} and ${where}`); else seen.set(pin, where); });
     add('2nd – All', 'No officer is used more than once', bad, all.length);
+    const ex = all.filter(([pin]) => isExempt(pin)).map(([pin, where]) => `Exempted PIN ${pin} selected in ${where}`);
+    add('2nd – All', 'No exempted officer is selected', ex, all.length);
   }
 
   const fp = Object.keys(fin.polling || {});

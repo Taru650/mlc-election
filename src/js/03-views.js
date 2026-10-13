@@ -252,7 +252,7 @@ VIEWS.officers = () => {
   <div class="card">
     <div class="card-head"><h2>Officers Database</h2></div>
     <p class="small muted">Required columns: PIN, Name, Designation, Office Name, Office Address, Mobile, Duty, <b>Home Block</b>, <b>Posting Block</b>. Recommended: <b>Office Code</b>, <b>Home Block Code</b>, <b>Posting Block Code</b> (e.g. census block code) — when codes are given they decide “same office” and “same block”, so spelling differences in names do not matter. Codes in [brackets]. Bank columns are optional (printed on attendance sheets). Blank PIN is auto-generated as District code + serial.</p>
-    <div class="kpis">${DUTIES.map(d => { const a = officersOfDuty(d.key).length, r = req[d.key]; return kpi(`${d.short} available${r ? ' / needed' : ''}`, r ? `${a} / ${r}` : a, r ? (a >= r ? 'ok' : 'bad') : ''); }).join('')}${kpi('Total', S.officers.length)}</div>
+    <div class="kpis">${DUTIES.map(d => { const a = availableOfDuty(d.key).length, r = req[d.key]; return kpi(`${d.short} available${r ? ' / needed' : ''}`, r ? `${a} / ${r}` : a, r ? (a >= r ? 'ok' : 'bad') : ''); }).join('')}${kpi('Total', S.officers.length)}${Object.keys(S.exempt).length ? kpi('Exempted', Object.keys(S.exempt).length, 'bad') : ''}</div>
     ${S.booths.length ? '' : '<p class="small muted">“Needed” figures appear once booths are entered (booths + reserve %).</p>'}
     ${lockBar('officers', `
       <button class="btn sm" data-act="officerTemplate">Download blank template</button>
@@ -270,7 +270,7 @@ VIEWS.officers = () => {
     <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Mobile</th><th>Duty</th><th>Home block</th><th>Posting block</th><th>Issues</th><th></th></tr></thead><tbody>
     ${slice.length ? slice.map(({ o, i }) => { const iss = v.rowIssues.get(i); return `<tr class="${iss ? (iss.level === 'err' ? 'err' : 'warnrow') : ''}">
       <td>${i + 1}</td><td class="pin">${esc(o.pin)}</td><td><b>${esc(o.name)}</b></td><td>${esc(o.designation)}</td><td>${o.officeCode ? `<span class="badge b-info">${esc(o.officeCode)}</span> ` : ''}${esc(o.office)}<div class="small muted">${esc(o.officeAddress)}</div></td><td>${esc(o.mobile)}</td>
-      <td>${o.duty ? dutyBadge(o.duty) : '<span class="badge b-bad">?</span>'}</td><td>${blockCell(o.homeBlockCode, o.homeBlock)}</td><td>${blockCell(o.postingBlockCode, o.postingBlock)}</td>
+      <td>${o.duty ? dutyBadge(o.duty) : '<span class="badge b-bad">?</span>'}${isExempt(o.pin) ? ' <span class="badge b-bad">EXEMPTED</span>' : ''}</td><td>${blockCell(o.homeBlockCode, o.homeBlock)}</td><td>${blockCell(o.postingBlockCode, o.postingBlock)}</td>
       <td class="small">${iss ? esc(iss.msgs.join('; ')) : ''}</td>
       <td class="nowrap"><button class="btn sm" data-act="editOfficer" data-arg="${i}" ${dis ? 'disabled' : ''}>Edit</button> <button class="btn sm ghost-bad" data-act="delOfficer" data-arg="${i}" ${dis ? 'disabled' : ''}>✕</button></td></tr>`; }).join('')
       : '<tr><td colspan="11" class="center muted" style="padding:24px">No officers yet. Import an Excel file or add manually.</td></tr>'}
@@ -487,7 +487,7 @@ ACT.runSecond = kind => {
   const label = PART_NAME[kind];
   const existing = kind === 'polling' ? S.second.parties.length : S.second[kind].length;
   if (existing && !confirmBox(`Re-run will discard the current ${label} and form a new random set. Other parts are not affected. Continue?`)) return;
-  const pool = kind === 'polling' ? S.officers.filter(o => PARTY_ROLES.some(r => o.duty === DUTY_BY_KEY[r].label)) : officersOfDuty(kind === 'pccp' ? 'PM' : 'MO');
+  const pool = kind === 'polling' ? S.officers.filter(o => !isExempt(o.pin) && PARTY_ROLES.some(r => o.duty === DUTY_BY_KEY[r].label)) : availableOfDuty(kind === 'pccp' ? 'PM' : 'MO');
   shuffleAnimation(`Forming ${label}`, pool, () => {
     if (kind === 'polling') { const r = formPollingParties(); S.second.parties = r.parties; addLog(`2nd randomisation: ${r.parties.length} polling parties formed (attempt ${r.attempts})`); }
     else { const r = formSingles(kind); S.second[kind] = r.items; addLog(`2nd randomisation: ${r.items.length} ${label} selected`); }

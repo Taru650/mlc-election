@@ -70,6 +70,16 @@ Randomness uses the browser's cryptographic generator (`crypto.getRandomValues`)
 If the data cannot satisfy the rules (e.g. every Presiding Officer lives or works in one
 block that has booths), the tool says exactly which block and duty is short.
 
+## Exemptions
+
+*Exemptions* (between the 1st letter and the 2nd randomisation) withdraws officers after
+training — tick them or type PINs, choose a category (Medical, Administrative, …), write the
+reason (mandatory) and an optional order reference. Exempted officers are never considered in
+the 2nd or final randomisation. An officer already selected in a **locked** part cannot be
+exempted (use a reserve); one in an unlocked part can be, and that part is discarded for a
+re-run. Exemptions can be withdrawn (*Restore*), are saved in the project Excel (`Exemptions`
+sheet), and are printed in the **Exemption Register** (print / PDF / Word / Excel).
+
 ## Letters as PDF and Word
 
 Every letter / report window has **Print / PDF** (choose “Save as PDF” as the printer) and

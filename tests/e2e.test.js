@@ -335,6 +335,73 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   ok(wd.pageBreaks === 11, `12 letters → 11 page breaks (got ${wd.pageBreaks})`);
   ok(wd.hasName && wd.hasDesig, 'Word file contains officer name and designation');
 
+  console.log('7g. Exemptions — removed from 2nd & final randomisation, with reason and register');
+  const exr = await page.evaluate(async () => {
+    const r = {};
+    __MLC.S = __MLC.generateTestState('small'); const S = __MLC.S;
+    ['setup', 'training', 'officers', 'booths'].forEach(m => { S.locks[m] = true; });
+    __MLC.ACT.go('exempt');
+    const pick = d => S.officers.filter(o => o.duty === d).slice(0, 2).map(o => o.pin);
+    const byPin = [...pick('PRESIDING OFFICER'), ...pick('MICRO OBSERVER')];
+    // reason is mandatory
+    document.querySelector('#exPins').value = byPin.join(', ');
+    __MLC.ACT.exemptByPin(); r.noReason = Object.keys(S.exempt).length;
+    document.querySelector('#exReason').value = 'Medical certificate'; document.querySelector('#exCat').value = 'Medical'; document.querySelector('#exOrder').value = 'Memo 12';
+    document.querySelector('#exPins').value = byPin.join(', ');
+    __MLC.ACT.exemptByPin(); r.afterPin = Object.keys(S.exempt).length;
+    // tick two P3 and one PCCP
+    const ticks = [...pick('POLLING OFFICER-3'), pick('PATROLLING MAGISTRATE')[0]];
+    ticks.forEach(pin => { const cb = document.querySelector(`input[data-chg="exTick"][data-arg="${pin}"]`) || (() => { __MLC.ACT.exSearch(null, { value: pin, selectionStart: 0 }); return document.querySelector(`input[data-chg="exTick"][data-arg="${pin}"]`); })(); cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); });
+    document.querySelector('#exReason').value = 'Transferred out of district'; document.querySelector('#exCat').value = 'Administrative';
+    __MLC.ACT.exemptTicked(); r.afterTick = Object.keys(S.exempt).length;
+    r.cats = Object.values(S.exempt).map(e => e.category).sort().join();
+    const exempted = new Set(Object.keys(S.exempt));
+    // randomise many times: exempted never selected / tagged
+    let hit = 0;
+    for (let i = 0; i < 80; i++) {
+      S.second.parties = __MLC.formPollingParties().parties; S.second.pccp = __MLC.formSingles('pccp').items; S.second.micro = __MLC.formSingles('micro').items;
+      S.final.polling = __MLC.finalPolling(); S.final.pccp = __MLC.finalSingles('pccp'); S.final.micro = __MLC.finalSingles('micro');
+      S.second.parties.forEach(p => ['PRO', 'P1', 'P2', 'P3'].forEach(k => { if (exempted.has(p[k])) hit++; }));
+      ['pccp', 'micro'].forEach(k => S.second[k].forEach(x => { if (exempted.has(x.pin)) hit++; }));
+    }
+    r.hit = hit;
+    r.auditOk = __MLC.runAudit().every(c => c.ok);
+    // exempting an officer in an UNLOCKED part clears that part; in a LOCKED part is refused
+    const inMo = S.second.micro[0].pin, inParty = S.second.parties[0].PRO;
+    S.parts.second.polling = true;
+    __MLC.ACT.go('exempt');
+    document.querySelector('#exReason').value = 'test'; document.querySelector('#exPins').value = inParty;
+    __MLC.ACT.exemptByPin(); r.lockedRefused = !S.exempt[inParty] && S.second.parties.length > 0;
+    document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    document.querySelector('#exReason').value = 'test'; document.querySelector('#exPins').value = inMo;
+    __MLC.ACT.exemptByPin(); r.unlockedCleared = !!S.exempt[inMo] && S.second.micro.length === 0 && Object.keys(S.final.micro).length === 0 && S.second.parties.length > 0;
+    // restore
+    __MLC.ACT.restoreExempt(inMo); r.restored = !S.exempt[inMo];
+    // a forced violation is caught by the audit
+    S.parts.second.polling = false; S.second.parties[0].PRO = [...exempted][0];
+    r.auditCatches = __MLC.runAudit().some(c => c.rule === 'No exempted officer is selected' && !c.ok);
+    // Excel round-trip
+    const buf = XLSX.write(__MLC.buildProjectWorkbook(), { bookType: 'xlsx', type: 'array' });
+    const st = __MLC.parseProjectWorkbook(XLSX.read(new Uint8Array(buf), { type: 'array' }));
+    r.roundTrip = JSON.stringify(Object.keys(st.exempt).sort()) === JSON.stringify(Object.keys(S.exempt).sort()) && st.exempt[byPin[0]].reason === 'Medical certificate' && st.exempt[byPin[0]].orderRef === 'Memo 12';
+    // register report
+    __MLC.ACT.report('exempted'); const t = document.querySelector('#docBody').innerText; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    const o0 = S.officers.find(o => o.pin === byPin[0]);
+    r.report = t.includes(o0.name) && t.includes('Medical certificate') && t.includes('Transferred out of district');
+    return r;
+  });
+  ok(exr.noReason === 0, 'exemption without a reason is refused');
+  ok(exr.afterPin === 4 && exr.afterTick === 7, `exempt by PIN (4) and by tick-box (+3) → ${exr.afterTick}`);
+  ok(exr.hit === 0, 'in 80 full randomisations no exempted officer was selected or tagged');
+  ok(exr.auditOk, 'all rule checks pass with exemptions');
+  ok(exr.lockedRefused, 'officer in a LOCKED part cannot be exempted');
+  ok(exr.unlockedCleared, 'exempting an officer in an unlocked part discards only that part');
+  ok(exr.restored, 'exemption can be withdrawn (Restore)');
+  ok(exr.auditCatches, 'rule check flags an exempted officer if one is ever selected');
+  ok(exr.roundTrip, 'exemptions with reason / order ref survive project Excel save & open');
+  ok(exr.report, 'Exemption Register lists name and reasons');
+  ok(errors.length === 0, 'no errors in exemption flow: ' + errors.join(' | '));
+
   console.log('7d. Secrecy — randomisation screens show PINs only');
   const secrecy = await page.evaluate(async () => {
     __MLC.S = __MLC.generateTestState('small'); const S = __MLC.S;

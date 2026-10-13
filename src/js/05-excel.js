@@ -213,6 +213,16 @@ const README_LINES = [
   'Dates    — DD-MM-YYYY.  Times — HH:MM (24 hour).',
 ];
 
+/* ---------- exemptions ---------- */
+const EXEMPT_HEAD = ['PIN', 'Name', 'Duty', 'Category', 'Reason', 'Order Ref', 'Date', 'Recorded At'];
+function exemptRows() { return Object.entries(S.exempt).map(([pin, e]) => { const o = officerByPin(pin) || {}; return [pin, o.name || '', o.duty || '', e.category, e.reason, e.orderRef || '', fmtDate(e.date), e.at || '']; }); }
+ACT.exportExempted = () => {
+  const wb = XLSX.utils.book_new();
+  const rows = Object.entries(S.exempt).map(([pin, e]) => { const o = officerByPin(pin) || {}; return [pin, o.name, o.designation, o.office, o.duty, o.mobile, e.category, e.reason, e.orderRef || '', fmtDate(e.date), e.at || '']; });
+  addSheet(wb, 'Exempted_Officers', ['PIN', 'Name', 'Designation', 'Office', 'Duty', 'Mobile', 'Category', 'Reason', 'Order Ref', 'Date', 'Recorded At'], rows, [12, 24, 22, 28, 22, 13, 16, 50, 26, 12, 20]);
+  saveWb(wb, `Exempted_Officers_${safeName(S.setup.district)}.xlsx`);
+};
+
 /* ---------- full project ---------- */
 function buildProjectWorkbook() {
   const wb = XLSX.utils.book_new();
@@ -240,6 +250,7 @@ function buildProjectWorkbook() {
     const chunks = S.setup.signature.match(/.{1,30000}/g) || [];
     addSheet(wb, 'Signature', ['Part', 'Data'], chunks.map((c, i) => [i + 1, c]), [6, 80]);
   }
+  addSheet(wb, 'Exemptions', EXEMPT_HEAD, exemptRows(), [12, 24, 22, 16, 50, 26, 12, 20]);
   addSheet(wb, 'Audit_Log', ['Time', 'Action'], S.log.map(l => [l.time, l.action]), [20, 100]);
   return wb;
 }
@@ -281,6 +292,7 @@ function parseProjectWorkbook(wb) {
     if (!sawParts) st.parts = null; // older file: hydrate() derives part locks from the whole-stage locks
     const sig = sheetObjects(findSheet(wb, 'Signature')).sort((a, b) => Number(a.part) - Number(b.part)).map(r => str(r.data)).join('');
     if (sig.startsWith('data:image/')) st.setup.signature = sig;
+    sheetObjects(findSheet(wb, 'Exemptions')).forEach(r => { const pin = str(r.pin).replace(/\.0$/, ''); if (pin && str(r.reason)) st.exempt[pin] = { category: str(r.category) || 'Other', reason: str(r.reason), orderRef: str(r.orderref), date: parseDateAny(r.date), at: str(r.recordedat) }; });
     st.log = sheetObjects(findSheet(wb, 'Audit_Log')).map(r => ({ time: str(r.time), action: str(r.action) })).filter(l => l.action);
   } finally { S = prevS; }
   return st;

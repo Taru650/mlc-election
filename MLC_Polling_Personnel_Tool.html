@@ -323,6 +323,7 @@ function defaultState() {
     ],
     training: emptyTraining(),
     officers: [],
+    exempt: {}, // PIN -> { category, reason, orderRef, date, at } — kept out of 2nd and final randomisation
     booths: [],
     second: { parties: [], pccp: [], micro: [], ran: {} },
     final: { polling: {}, pccp: {}, micro: {}, ran: {} },
@@ -450,6 +451,9 @@ function constByCode(code) { return S.constituencies.find(c => c.code === code) 
 function constName(code) { const c = constByCode(code); return c ? (c.name || c.code) : code; }
 function dutyKeyFromLabel(label) { const d = DUTIES.find(x => x.label === label); return d ? d.key : ''; }
 function officersOfDuty(key) { const lbl = DUTY_BY_KEY[key].label; return S.officers.filter(o => o.duty === lbl); }
+function isExempt(pin) { return !!(S.exempt && S.exempt[String(pin)]); }
+/** Officers of a duty who are available for randomisation (not exempted). */
+function availableOfDuty(key) { return officersOfDuty(key).filter(o => !isExempt(o.pin)); }
 function boothsOf(code) { return S.booths.filter(b => b.const === code); }
 function reserveTarget(required) { return Math.ceil(required * (1 + (Number(S.setup.reservePct) || 0) / 100)); }
 /** Home block and posting block of an officer as block references (used for exclusion). */
@@ -531,6 +535,7 @@ function hydrate(st) {
   out.officers = (out.officers || []).map(o => Object.assign(blankOfficer(), o));
   out.booths = (out.booths || []).map(b => Object.assign(blankBooth(), b));
   out.log = out.log || [];
+  out.exempt = (st && st.exempt && typeof st.exempt === 'object') ? st.exempt : {};
   return out;
 }
 function addLog(action) { S.log.push({ time: nowStamp(), action }); if (S.log.length > 2000) S.log.shift(); }
@@ -576,6 +581,7 @@ const MODULES = [
   { id: 'officers', label: 'Officers Database',    grp: 'Data entry', lock: 'officers' },
   { id: 'booths',   label: 'Booth Entry',          grp: 'Data entry', lock: 'booths' },
   { id: 'letter1',  label: '1st Appointment Letter', grp: 'Letters & Randomisation', lock: 'letter1' },
+  { id: 'exempt',   label: 'Exemptions',           grp: 'Letters & Randomisation' },
   { id: 'second',   label: '2nd Randomisation',    grp: 'Letters & Randomisation', lock: 'second' },
   { id: 'final',    label: 'Final Randomisation',  grp: 'Letters & Randomisation', lock: 'final' },
   { id: 'reports',  label: 'Reports & Letters',    grp: 'Output' },
@@ -586,6 +592,7 @@ function prereqs(id) {
   if (id === 'officers' && !L.setup) miss.push('Election Setup');
   if (id === 'booths' && !L.setup) miss.push('Election Setup');
   if (id === 'letter1') { if (!L.officers) miss.push('Officers Database'); if (!L.training) miss.push('Training Schedule'); if (!L.setup) miss.push('Election Setup'); }
+  if (id === 'exempt' && !L.officers) miss.push('Officers Database');
   if (id === 'second') { if (!L.setup) miss.push('Election Setup'); if (!L.officers) miss.push('Officers Database'); if (!L.booths) miss.push('Booth Entry'); }
   if (id === 'final') { if (!PART_KINDS.some(k => partApplicable(k) && S.parts.second[k])) miss.push('at least one part of the 2nd Randomisation'); }
   return miss;
@@ -795,6 +802,7 @@ function distinctBlockId(r, fallback) { return isOutside(r) ? fallback : (blockI
 function buildMeta() {
   const meta = new Map();
   S.officers.forEach(o => {
+    if (isExempt(o.pin)) return; // exempted officers never enter the 2nd / final randomisation
     const ok = officeKey(o);
     meta.set(String(o.pin), {
       o, pin: String(o.pin),
@@ -1071,6 +1079,8 @@ function runAudit() {
     const seen = new Map(), bad = [];
     all.forEach(([pin, where]) => { if (seen.has(pin)) bad.push(`PIN ${pin} used in ${seen.get(pin)} and ${where}`); else seen.set(pin, where); });
     add('2nd – All', 'No officer is used more than once', bad, all.length);
+    const ex = all.filter(([pin]) => isExempt(pin)).map(([pin, where]) => `Exempted PIN ${pin} selected in ${where}`);
+    add('2nd – All', 'No exempted officer is selected', ex, all.length);
   }
 
   const fp = Object.keys(fin.polling || {});
@@ -1370,7 +1380,7 @@ VIEWS.officers = () => {
   <div class="card">
     <div class="card-head"><h2>Officers Database</h2></div>
     <p class="small muted">Required columns: PIN, Name, Designation, Office Name, Office Address, Mobile, Duty, <b>Home Block</b>, <b>Posting Block</b>. Recommended: <b>Office Code</b>, <b>Home Block Code</b>, <b>Posting Block Code</b> (e.g. census block code) — when codes are given they decide “same office” and “same block”, so spelling differences in names do not matter. Codes in [brackets]. Bank columns are optional (printed on attendance sheets). Blank PIN is auto-generated as District code + serial.</p>
-    <div class="kpis">${DUTIES.map(d => { const a = officersOfDuty(d.key).length, r = req[d.key]; return kpi(`${d.short} available${r ? ' / needed' : ''}`, r ? `${a} / ${r}` : a, r ? (a >= r ? 'ok' : 'bad') : ''); }).join('')}${kpi('Total', S.officers.length)}</div>
+    <div class="kpis">${DUTIES.map(d => { const a = availableOfDuty(d.key).length, r = req[d.key]; return kpi(`${d.short} available${r ? ' / needed' : ''}`, r ? `${a} / ${r}` : a, r ? (a >= r ? 'ok' : 'bad') : ''); }).join('')}${kpi('Total', S.officers.length)}${Object.keys(S.exempt).length ? kpi('Exempted', Object.keys(S.exempt).length, 'bad') : ''}</div>
     ${S.booths.length ? '' : '<p class="small muted">“Needed” figures appear once booths are entered (booths + reserve %).</p>'}
     ${lockBar('officers', `
       <button class="btn sm" data-act="officerTemplate">Download blank template</button>
@@ -1388,7 +1398,7 @@ VIEWS.officers = () => {
     <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Mobile</th><th>Duty</th><th>Home block</th><th>Posting block</th><th>Issues</th><th></th></tr></thead><tbody>
     ${slice.length ? slice.map(({ o, i }) => { const iss = v.rowIssues.get(i); return `<tr class="${iss ? (iss.level === 'err' ? 'err' : 'warnrow') : ''}">
       <td>${i + 1}</td><td class="pin">${esc(o.pin)}</td><td><b>${esc(o.name)}</b></td><td>${esc(o.designation)}</td><td>${o.officeCode ? `<span class="badge b-info">${esc(o.officeCode)}</span> ` : ''}${esc(o.office)}<div class="small muted">${esc(o.officeAddress)}</div></td><td>${esc(o.mobile)}</td>
-      <td>${o.duty ? dutyBadge(o.duty) : '<span class="badge b-bad">?</span>'}</td><td>${blockCell(o.homeBlockCode, o.homeBlock)}</td><td>${blockCell(o.postingBlockCode, o.postingBlock)}</td>
+      <td>${o.duty ? dutyBadge(o.duty) : '<span class="badge b-bad">?</span>'}${isExempt(o.pin) ? ' <span class="badge b-bad">EXEMPTED</span>' : ''}</td><td>${blockCell(o.homeBlockCode, o.homeBlock)}</td><td>${blockCell(o.postingBlockCode, o.postingBlock)}</td>
       <td class="small">${iss ? esc(iss.msgs.join('; ')) : ''}</td>
       <td class="nowrap"><button class="btn sm" data-act="editOfficer" data-arg="${i}" ${dis ? 'disabled' : ''}>Edit</button> <button class="btn sm ghost-bad" data-act="delOfficer" data-arg="${i}" ${dis ? 'disabled' : ''}>✕</button></td></tr>`; }).join('')
       : '<tr><td colspan="11" class="center muted" style="padding:24px">No officers yet. Import an Excel file or add manually.</td></tr>'}
@@ -1605,7 +1615,7 @@ ACT.runSecond = kind => {
   const label = PART_NAME[kind];
   const existing = kind === 'polling' ? S.second.parties.length : S.second[kind].length;
   if (existing && !confirmBox(`Re-run will discard the current ${label} and form a new random set. Other parts are not affected. Continue?`)) return;
-  const pool = kind === 'polling' ? S.officers.filter(o => PARTY_ROLES.some(r => o.duty === DUTY_BY_KEY[r].label)) : officersOfDuty(kind === 'pccp' ? 'PM' : 'MO');
+  const pool = kind === 'polling' ? S.officers.filter(o => !isExempt(o.pin) && PARTY_ROLES.some(r => o.duty === DUTY_BY_KEY[r].label)) : availableOfDuty(kind === 'pccp' ? 'PM' : 'MO');
   shuffleAnimation(`Forming ${label}`, pool, () => {
     if (kind === 'polling') { const r = formPollingParties(); S.second.parties = r.parties; addLog(`2nd randomisation: ${r.parties.length} polling parties formed (attempt ${r.attempts})`); }
     else { const r = formSingles(kind); S.second[kind] = r.items; addLog(`2nd randomisation: ${r.items.length} ${label} selected`); }
@@ -1980,8 +1990,8 @@ const REPORTS = {
     <h4>Reserve Micro Observers</h4><table class="lt"><tr><th>Order</th><th>Const.</th><th>Officer</th></tr>${(S.parts.final.micro ? reserveSingles('micro') : []).map(x => `<tr><td>${esc(x.orderNo)}</td><td>${esc(x.const)}</td><td>${nameMob(x.pin)}</td></tr>`).join('')}</table>`)],
   remaining: ['Officers not selected in 2nd randomisation', () => {
     const used = new Set(); S.second.parties.forEach(p => PARTY_ROLES.forEach(r => used.add(String(p[r])))); S.second.pccp.forEach(x => used.add(String(x.pin))); S.second.micro.forEach(x => used.add(String(x.pin)));
-    const rows = S.officers.filter(o => !used.has(String(o.pin)));
-    return regDoc('OFFICERS NOT SELECTED IN 2ND RANDOMISATION', `<table class="lt"><tr><th>Sl</th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Duty</th><th>Home block</th><th>Posting block</th><th>Mobile</th></tr>${rows.map((o, i) => `<tr><td>${i + 1}</td><td>${esc(o.pin)}</td><td>${esc(o.name)}</td><td>${esc(o.designation)}</td><td>${esc(o.office)}</td><td>${esc(o.duty)}</td><td>${esc(o.homeBlock)}</td><td>${esc(o.postingBlock)}</td><td>${esc(o.mobile)}</td></tr>`).join('')}</table>`);
+    const rows = S.officers.filter(o => !used.has(String(o.pin)) && !isExempt(o.pin));
+    return regDoc('OFFICERS NOT SELECTED IN 2ND RANDOMISATION (exempted officers listed separately)', `<table class="lt"><tr><th>Sl</th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Duty</th><th>Home block</th><th>Posting block</th><th>Mobile</th></tr>${rows.map((o, i) => `<tr><td>${i + 1}</td><td>${esc(o.pin)}</td><td>${esc(o.name)}</td><td>${esc(o.designation)}</td><td>${esc(o.office)}</td><td>${esc(o.duty)}</td><td>${esc(o.homeBlock)}</td><td>${esc(o.postingBlock)}</td><td>${esc(o.mobile)}</td></tr>`).join('')}</table>`);
   }],
   blockCheck: ['Block exclusion proof (booth vs. member blocks)', () => regDoc('BLOCK EXCLUSION PROOF — every tagged officer vs. booth block', `<table class="lt"><tr><th>Booth</th><th>Booth block</th><th>Role</th><th>Officer</th><th>Office</th><th>Home block</th><th>Posting block</th><th>OK?</th></tr>
     ${S.booths.map(b => { const p = finalPartyOf(b); const rows = []; if (p) PARTY_ROLES.forEach(r => rows.push([DUTY_BY_KEY[r].short, p[r]])); const pc = tagged('pccp', b.id), mo = tagged('micro', b.id); if (pc) rows.push(['PCCP', pc.pin]); if (mo) rows.push(['MO', mo.pin]);
@@ -2005,7 +2015,7 @@ VIEWS.reports = () => {
       ${card('Final letters — main parties', 'Booth disclosed.', b('finalLetters', 'polling', 'Open', fp.polling))}
       ${card('Final letters — PCCP / MO', 'Booth disclosed.', b('finalLetters', 'pccp', 'PCCP', fp.pccp && S.second.pccp.length) + b('finalLetters', 'micro', 'Micro Obs.', fp.micro && S.second.micro.length))}
       ${card('Final letters — reserve', 'One letter per reserve officer of each locked part.', b('finalLetters', 'reserve', 'Open', PART_KINDS.some(k => fp[k])))}
-      ${Object.entries(REPORTS).map(([k, [t]]) => card(t, k === 'remaining' ? 'After 2nd randomisation.' : k === 'audit' || k === 'log' ? 'Any time.' : 'After final randomisation.', b('report', k, 'Open', k === 'audit' || k === 'log' || (k === 'remaining' ? S.second.parties.length > 0 : fin)))).join('')}
+      ${Object.entries(REPORTS).map(([k, [t]]) => card(t, k === 'remaining' ? 'After 2nd randomisation.' : k === 'audit' || k === 'log' ? 'Any time.' : k === 'exempted' ? 'Officers withdrawn, with reasons.' : 'After final randomisation.', b('report', k, 'Open', k === 'audit' || k === 'log' || (k === 'exempted' && Object.keys(S.exempt).length > 0) || (k !== 'exempted' && (k === 'remaining' ? S.second.parties.length > 0 : fin))))).join('')}
     </div></div>
     <div class="card"><div class="card-head"><h3>Excel exports</h3></div><div class="btn-row">
       <button class="btn" data-act="exportSecond" ${S.second.parties.length ? '' : 'disabled'}>2nd randomisation (Excel)</button>
@@ -2028,6 +2038,121 @@ ACT.finalLetters = kind => {
   ['pccp', 'micro'].filter(k => S.parts.final[k]).forEach(k => reserveSingles(k).forEach(x => { const o = officerByPin(x.pin); if (o) parts.push(reserveLetterHtml(o, x.orderNo, x.const)); }));
   openDoc(`Final Appointment Letters — Reserve (${parts.length})`, parts.join(''));
 };
+
+/* ---- 04b-exempt.js ---- */
+/* =====================================================================
+ * Exemptions — officers removed from the 2nd and final randomisation
+ * (e.g. medical / administrative reasons after training), with reason,
+ * category, order reference and date, plus an exemption register.
+ * ===================================================================== */
+const EXEMPT_CATEGORIES = ['Medical', 'Administrative', 'Retired / Transferred', 'Absent in training', 'Other'];
+UI.exSel = new Set(); UI.exQuery = ''; UI.exPage = 1;
+
+/** Parts (2nd randomisation) in which a PIN is currently selected. */
+function partsUsingPin(pin) {
+  const p = String(pin), out = [];
+  if (S.second.parties.some(x => PARTY_ROLES.some(r => String(x[r]) === p))) out.push('polling');
+  if (S.second.pccp.some(x => String(x.pin) === p)) out.push('pccp');
+  if (S.second.micro.some(x => String(x.pin) === p)) out.push('micro');
+  return out;
+}
+function exemptInfoFromForm() {
+  const g = id => str(($('#' + id) || {}).value);
+  return { category: g('exCat') || 'Other', reason: g('exReason'), orderRef: g('exOrder'), date: g('exDate') || new Date().toISOString().slice(0, 10) };
+}
+/** Exempts PINs. Refuses if any is in a LOCKED part; clears unlocked parts that contain them (after confirmation). */
+function exemptPins(pins, info) {
+  pins = [...new Set(pins.map(p => str(p)).filter(Boolean))];
+  if (!pins.length) return toast('Enter or tick at least one PIN.', 'bad');
+  if (!info.reason) return toast('Write the reason for exemption.', 'bad');
+  const unknown = pins.filter(p => !officerByPin(p)), already = pins.filter(p => isExempt(p));
+  const todo = pins.filter(p => officerByPin(p) && !isExempt(p));
+  if (unknown.length && !todo.length) return showErrors('PIN not found', [`Not in the officer list: ${unknown.join(', ')}`]);
+  const lockedHits = [], clear = new Set();
+  todo.forEach(p => partsUsingPin(p).forEach(k => { if (S.parts.second[k]) lockedHits.push(`PIN ${p} is already selected in the LOCKED ${PART_NAME[k]} randomisation`); else clear.add(k); }));
+  if (lockedHits.length) return showErrors('Cannot exempt — officer already in a locked randomisation', lockedHits.concat(['Unlock that part of the 2nd randomisation first (its result will then need a re-run), or use a reserve instead.']));
+  if (clear.size && !confirmBox(`These officers are in the current (unlocked) ${[...clear].map(k => PART_NAME[k]).join(', ')} randomisation. Exempting them will DISCARD that result so it can be re-run without them. Continue?`)) return;
+  clear.forEach(k => { if (k === 'polling') S.second.parties = []; else S.second[k] = []; delete S.second.ran[k]; S.final[k] = {}; delete S.final.ran[k]; });
+  const at = nowStamp();
+  todo.forEach(p => { S.exempt[p] = Object.assign({ at }, info); });
+  addLog(`Exempted ${todo.length} officer(s) [${info.category}] ${info.reason}${info.orderRef ? ' (ref ' + info.orderRef + ')' : ''}: ${todo.join(', ')}`);
+  UI.exSel.clear();
+  persist(); render();
+  const notes = [];
+  if (already.length) notes.push(`already exempted: ${already.join(', ')}`);
+  if (unknown.length) notes.push(`not found: ${unknown.join(', ')}`);
+  toast(`${todo.length} officer(s) exempted.${notes.length ? '\n' + notes.join('\n') : ''}${clear.size ? '\nRe-run: ' + [...clear].map(k => PART_NAME[k]).join(', ') : ''}`, notes.length ? 'warn' : 'ok');
+}
+ACT.exemptByPin = () => exemptPins(str(($('#exPins') || {}).value).split(/[\s,;]+/), exemptInfoFromForm());
+ACT.exemptTicked = () => exemptPins([...UI.exSel], exemptInfoFromForm());
+ACT.exTick = (pin, el) => { if (el.checked) UI.exSel.add(pin); else UI.exSel.delete(pin); const c = $('#exSelCount'); if (c) c.textContent = UI.exSel.size; };
+ACT.exTickPage = (a, el) => { $$('input[data-chg="exTick"]').forEach(cb => { cb.checked = el.checked; if (el.checked) UI.exSel.add(cb.dataset.arg); else UI.exSel.delete(cb.dataset.arg); }); const c = $('#exSelCount'); if (c) c.textContent = UI.exSel.size; };
+ACT.exSearch = (a, el) => { UI.exQuery = el.value; UI.exPage = 1; const pos = el.selectionStart; render(); const n = $('[data-inp="exSearch"]'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
+ACT.exPageNav = d => { UI.exPage += Number(d); render(); };
+ACT.restoreExempt = pin => {
+  const e = S.exempt[pin]; if (!e) return;
+  const o = officerByPin(pin);
+  if (!confirmBox(`Restore ${o ? o.name : ''} (PIN ${pin}) to the randomisation pool?\nExempted for: ${e.reason}`)) return;
+  delete S.exempt[pin];
+  addLog(`Exemption withdrawn for PIN ${pin} (was: ${e.reason})`);
+  persist(); render();
+  toast(`PIN ${pin} restored. Already-formed results are unchanged; re-run an unlocked part if you want this officer considered.`, 'ok');
+};
+
+VIEWS.exempt = () => {
+  const ready = !prereqs('exempt').length;
+  const q = UI.exQuery.toLowerCase();
+  const rows = S.officers.filter(o => !isExempt(o.pin) && (!q || [o.pin, o.name, o.designation, o.office, o.officeCode, o.duty, o.mobile].some(x => str(x).toLowerCase().includes(q))));
+  const ps = 50, pages = Math.max(1, Math.ceil(rows.length / ps)); UI.exPage = Math.min(Math.max(1, UI.exPage), pages);
+  const slice = rows.slice((UI.exPage - 1) * ps, UI.exPage * ps);
+  const ex = Object.entries(S.exempt);
+  const lockedParts = PART_KINDS.filter(k => S.parts.second[k]);
+  return `
+  <div class="card">
+    <div class="card-head"><h2>Exemptions</h2><span class="spacer"></span><span class="badge ${ex.length ? 'b-bad' : ''}">${ex.length} exempted</span></div>
+    <p class="small muted">Use after training when an officer must be withdrawn (medical, administrative, etc.). An exempted officer is <b>not considered in the 2nd or final randomisation</b> — no party, PCCP / Micro Observer order or booth. The reason is recorded and printed in the Exemption Register. 1st letters and training attendance still list the officer (they were issued earlier).</p>
+    ${lockedParts.length ? `<div class="alert warn">Locked in the 2nd randomisation: <b>${lockedParts.map(k => PART_NAME[k]).join(', ')}</b>. Officers already selected there cannot be exempted unless that part is unlocked (use a reserve instead).</div>` : ''}
+    <fieldset><legend>Exemption details (required)</legend>
+      <div class="grid g4">
+        <label class="f">Category<select id="exCat">${EXEMPT_CATEGORIES.map(c => `<option>${esc(c)}</option>`).join('')}</select></label>
+        <label class="f span2">Reason *<input type="text" id="exReason" placeholder="e.g. Medical certificate from Civil Surgeon — surgery on 20-10-2026"></label>
+        <label class="f">Date<input type="date" id="exDate" value="${new Date().toISOString().slice(0, 10)}"></label>
+        <label class="f span2">Order / letter reference (optional)<input type="text" id="exOrder" placeholder="e.g. Memo No. 512/Election dt. 14-10-2026"></label>
+        <label class="f span2">Exempt by PIN (one or more, separated by comma / space)<div class="btn-row"><input type="text" id="exPins" placeholder="0300012, 0300045" style="flex:1"><button class="btn bad" data-act="exemptByPin" ${ready ? '' : 'disabled'}>Exempt PIN(s)</button></div></label>
+      </div>
+    </fieldset>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Select officers</h3><span class="spacer"></span><button class="btn bad" data-act="exemptTicked" ${ready ? '' : 'disabled'}>Exempt ticked officers (<span id="exSelCount">${UI.exSel.size}</span>)</button></div>
+    <div class="btn-row" style="margin-bottom:8px"><input type="search" placeholder="Search PIN, name, office, duty…" value="${esc(UI.exQuery)}" data-inp="exSearch" style="max-width:360px">
+      <span class="spacer"></span><span class="small muted">${rows.length} available · page ${UI.exPage} / ${pages}</span>
+      <button class="btn sm" data-act="exPageNav" data-arg="-1" ${UI.exPage <= 1 ? 'disabled' : ''}>‹ Prev</button><button class="btn sm" data-act="exPageNav" data-arg="1" ${UI.exPage >= pages ? 'disabled' : ''}>Next ›</button></div>
+    <div class="tbl-wrap"><table class="t"><thead><tr><th><input type="checkbox" data-chg="exTickPage" title="Tick all on this page"></th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Duty</th><th>Mobile</th><th>In 2nd randomisation</th></tr></thead><tbody>
+    ${slice.length ? slice.map(o => { const used = partsUsingPin(o.pin); return `<tr><td><input type="checkbox" data-chg="exTick" data-arg="${esc(o.pin)}" ${UI.exSel.has(String(o.pin)) ? 'checked' : ''}></td><td class="pin">${esc(o.pin)}</td><td><b>${esc(o.name)}</b></td><td>${esc(o.designation)}</td><td>${esc(o.office)}</td><td>${dutyBadge(o.duty)}</td><td>${esc(o.mobile)}</td><td>${used.map(k => `<span class="badge ${S.parts.second[k] ? 'b-ok' : 'b-warn'}">${PART_NAME[k]}${S.parts.second[k] ? ' 🔒' : ''}</span>`).join(' ') || '—'}</td></tr>`; }).join('')
+      : '<tr><td colspan="8" class="center muted" style="padding:20px">No matching officers.</td></tr>'}
+    </tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Exempted officers (${ex.length})</h3><span class="spacer"></span>
+      <button class="btn sm pri" data-act="report" data-arg="exempted" ${ex.length ? '' : 'disabled'}>Exemption Register (print / PDF / Word)</button>
+      <button class="btn sm" data-act="exportExempted" ${ex.length ? '' : 'disabled'}>Export Excel</button></div>
+    <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>PIN</th><th>Name</th><th>Duty</th><th>Category</th><th>Reason</th><th>Order ref</th><th>Date</th><th></th></tr></thead><tbody>
+    ${ex.length ? ex.map(([pin, e], i) => { const o = officerByPin(pin) || {}; return `<tr><td>${i + 1}</td><td class="pin">${esc(pin)}</td><td><b>${esc(o.name || '(PIN not in officer list)')}</b></td><td>${o.duty ? dutyBadge(o.duty) : ''}</td><td>${esc(e.category)}</td><td>${esc(e.reason)}</td><td>${esc(e.orderRef)}</td><td class="nowrap">${esc(fmtDate(e.date))}</td><td><button class="btn sm" data-act="restoreExempt" data-arg="${esc(pin)}">Restore</button></td></tr>`; }).join('')
+      : '<tr><td colspan="9" class="center muted" style="padding:20px">No officer exempted.</td></tr>'}
+    </tbody></table></div>
+  </div>`;
+};
+
+REPORTS.exempted = ['Exemption register (exempted officers & reasons)', () => {
+  const ex = Object.entries(S.exempt);
+  const byCat = {}; ex.forEach(([, e]) => { byCat[e.category] = (byCat[e.category] || 0) + 1; });
+  return regDoc('EXEMPTION REGISTER — officers withdrawn from 2nd / final randomisation', `
+    <p class="small">Total exempted: <b>${ex.length}</b>${Object.keys(byCat).length ? ' — ' + Object.entries(byCat).map(([c, n]) => `${esc(c)}: ${n}`).join(', ') : ''}</p>
+    <table class="lt"><tr><th>Sl</th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Duty</th><th>Mobile</th><th>Category</th><th>Reason</th><th>Order ref</th><th>Date</th></tr>
+    ${ex.map(([pin, e], i) => { const o = officerByPin(pin) || {}; return `<tr><td>${i + 1}</td><td><b>${esc(pin)}</b></td><td>${esc(o.name)}</td><td>${esc(o.designation)}</td><td>${esc(o.office)}</td><td>${esc(o.duty)}</td><td>${esc(o.mobile)}</td><td>${esc(e.category)}</td><td>${esc(e.reason)}</td><td>${esc(e.orderRef)}</td><td>${esc(fmtDate(e.date))}</td></tr>`; }).join('')}
+    </table>
+    <div class="sigs" style="margin-top:30px"><div></div><div></div><div>${sigHtml()}<b>${esc(S.setup.authSubTitle)}</b><br>${esc(S.setup.district)}</div></div>`);
+}];
 
 /* ---- 05-excel.js ---- */
 /* =====================================================================
@@ -2245,6 +2370,16 @@ const README_LINES = [
   'Dates    — DD-MM-YYYY.  Times — HH:MM (24 hour).',
 ];
 
+/* ---------- exemptions ---------- */
+const EXEMPT_HEAD = ['PIN', 'Name', 'Duty', 'Category', 'Reason', 'Order Ref', 'Date', 'Recorded At'];
+function exemptRows() { return Object.entries(S.exempt).map(([pin, e]) => { const o = officerByPin(pin) || {}; return [pin, o.name || '', o.duty || '', e.category, e.reason, e.orderRef || '', fmtDate(e.date), e.at || '']; }); }
+ACT.exportExempted = () => {
+  const wb = XLSX.utils.book_new();
+  const rows = Object.entries(S.exempt).map(([pin, e]) => { const o = officerByPin(pin) || {}; return [pin, o.name, o.designation, o.office, o.duty, o.mobile, e.category, e.reason, e.orderRef || '', fmtDate(e.date), e.at || '']; });
+  addSheet(wb, 'Exempted_Officers', ['PIN', 'Name', 'Designation', 'Office', 'Duty', 'Mobile', 'Category', 'Reason', 'Order Ref', 'Date', 'Recorded At'], rows, [12, 24, 22, 28, 22, 13, 16, 50, 26, 12, 20]);
+  saveWb(wb, `Exempted_Officers_${safeName(S.setup.district)}.xlsx`);
+};
+
 /* ---------- full project ---------- */
 function buildProjectWorkbook() {
   const wb = XLSX.utils.book_new();
@@ -2272,6 +2407,7 @@ function buildProjectWorkbook() {
     const chunks = S.setup.signature.match(/.{1,30000}/g) || [];
     addSheet(wb, 'Signature', ['Part', 'Data'], chunks.map((c, i) => [i + 1, c]), [6, 80]);
   }
+  addSheet(wb, 'Exemptions', EXEMPT_HEAD, exemptRows(), [12, 24, 22, 16, 50, 26, 12, 20]);
   addSheet(wb, 'Audit_Log', ['Time', 'Action'], S.log.map(l => [l.time, l.action]), [20, 100]);
   return wb;
 }
@@ -2313,6 +2449,7 @@ function parseProjectWorkbook(wb) {
     if (!sawParts) st.parts = null; // older file: hydrate() derives part locks from the whole-stage locks
     const sig = sheetObjects(findSheet(wb, 'Signature')).sort((a, b) => Number(a.part) - Number(b.part)).map(r => str(r.data)).join('');
     if (sig.startsWith('data:image/')) st.setup.signature = sig;
+    sheetObjects(findSheet(wb, 'Exemptions')).forEach(r => { const pin = str(r.pin).replace(/\.0$/, ''); if (pin && str(r.reason)) st.exempt[pin] = { category: str(r.category) || 'Other', reason: str(r.reason), orderRef: str(r.orderref), date: parseDateAny(r.date), at: str(r.recordedat) }; });
     st.log = sheetObjects(findSheet(wb, 'Audit_Log')).map(r => ({ time: str(r.time), action: str(r.action) })).filter(l => l.action);
   } finally { S = prevS; }
   return st;
