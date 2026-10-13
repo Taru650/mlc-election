@@ -188,10 +188,16 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
         __MLC.S = __MLC.generateTestState('large'); const S = __MLC.S;
         S.second.parties = __MLC.formPollingParties().parties; S.parts.second.polling = true;
         S.final.polling = __MLC.finalPolling(); S.parts.final.polling = true;
+        S.second.micro = __MLC.formSingles('micro').items; S.parts.second.micro = true;
+        S.final.micro = __MLC.finalSingles('micro'); S.parts.final.micro = true;
       }
-      const S = __MLC.S, roles = ['PRO', 'P1', 'P2', 'P3'], labels = ['PRESIDING OFFICER', 'POLLING OFFICER-1', 'POLLING OFFICER-2', 'POLLING OFFICER-3'];
+      const S = __MLC.S, roles = ['PRO', 'P1', 'P2', 'P3'], labels = ['PRESIDING OFFICER', 'POLLING OFFICER-1', 'POLLING OFFICER-2', 'POLLING OFFICER-3', 'MICRO OBSERVER'];
       // ground truth computed directly from state, independent of report code
-      const truth = S.booths.map(b => { const p = S.second.parties.find(x => x.partyNo === S.final.polling[b.id]); return { b, p, offs: roles.map(r => S.officers.find(o => o.pin === p[r])) }; });
+      const truth = S.booths.map(b => { const p = S.second.parties.find(x => x.partyNo === S.final.polling[b.id]);
+        const offs = roles.map(r => S.officers.find(o => o.pin === p[r]));
+        const mo = S.second.micro.find(x => x.orderNo === S.final.micro[b.id]); offs.push(mo ? S.officers.find(o => o.pin === mo.pin) : null);
+        return { b, p, offs }; });
+      const moCount = truth.filter(t => t.offs[4]).length;
       const errs = [];
       __MLC.ACT.report('commPlan');
       const blocks = [...document.querySelectorAll('#docBody .cp-booth')];
@@ -202,26 +208,29 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
         if (!head.includes('Booth No. ' + t.b.no) || !head.includes(t.b.name)) errs.push(`booth ${i}: heading "${head}"`);
         if (!sub.includes(t.p.partyNo)) errs.push(`booth ${t.b.no}: party ${t.p.partyNo} missing`);
         const rows = [...blk.querySelectorAll('tr')].slice(1).map(tr => [...tr.cells].map(c => c.innerText.trim()));
-        if (rows.length !== 4) errs.push(`booth ${t.b.no}: ${rows.length} rows`);
-        rows.forEach((r, k) => { const o = t.offs[k]; const want = [labels[k], o.pin, o.name, o.designation, o.mobile]; if (JSON.stringify(r) !== JSON.stringify(want)) errs.push(`booth ${t.b.no} row ${k}: ${r.join('|')} ≠ ${want.join('|')}`); });
+        if (rows.length !== 5) errs.push(`booth ${t.b.no}: ${rows.length} rows`);
+        rows.forEach((r, k) => { const o = t.offs[k]; const want = o ? [labels[k], o.pin, o.name, o.designation, o.mobile] : [labels[k], 'No Micro Observer allotted to this booth']; if (JSON.stringify(r) !== JSON.stringify(want)) errs.push(`booth ${t.b.no} row ${k}: ${r.join('|')} ≠ ${want.join('|')}`); });
       });
       document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
       // Excel export content (same rows the download contains)
       const wb = XLSX.utils.book_new(); addSheet(wb, 'x', COMMPLAN_HEAD, commPlanRows());
       const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       const xr = XLSX.utils.sheet_to_json(XLSX.read(new Uint8Array(buf), { type: 'array' }).Sheets.x, { defval: '', raw: false });
-      if (xr.length !== truth.length * 4) errs.push(`excel rows ${xr.length}`);
-      truth.forEach((t, i) => t.offs.forEach((o, k) => { const r = xr[i * 4 + k] || {};
+      if (xr.length !== truth.length * 5) errs.push(`excel rows ${xr.length}`);
+      truth.forEach((t, i) => t.offs.forEach((o, k) => { const r = xr[i * 5 + k] || {};
+        if (!o) { if (r.Post !== 'MICRO OBSERVER' || !/No Micro Observer/.test(r.Name)) errs.push(`excel booth ${t.b.no} MO note`); return; }
         if (String(r['Booth No']) !== String(t.b.no) || r['Party No'] !== t.p.partyNo || r.Post !== labels[k] || String(r.PIN) !== String(o.pin) || r.Name !== o.name || r.Designation !== o.designation || String(r.Mobile) !== String(o.mobile)) errs.push(`excel booth ${t.b.no} row ${k}`); }));
       // every officer appears exactly once and only for the booth his party is tagged to
-      const seen = new Set(); truth.forEach(t => t.offs.forEach(o => { if (seen.has(o.pin)) errs.push('dup ' + o.pin); seen.add(o.pin); }));
-      return { booths: truth.length, errs: errs.slice(0, 5), n: errs.length };
+      const seen = new Set(); truth.forEach(t => t.offs.forEach(o => { if (!o) return; if (seen.has(o.pin)) errs.push('dup ' + o.pin); seen.add(o.pin); }));
+      return { booths: truth.length, mo: moCount, errs: errs.slice(0, 5), n: errs.length };
     }, ds);
-    ok(cp.n === 0, `${ds} dataset: ${cp.booths} booths × 4 officers match the allotment in report and Excel ${cp.errs.join(' | ')}`);
+    ok(cp.n === 0 && cp.mo > 0, `${ds} dataset: ${cp.booths} booths × (PrO, P1, P2, P3 + MO; ${cp.mo} MOs tagged) match the allotment in report and Excel ${cp.errs.join(' | ')}`);
   }
   await page.evaluate(() => { __MLC.S = window.__savedState; });
   const cpLocked = await page.evaluate(() => { __MLC.S.parts.final.polling = false; __MLC.ACT.report('commPlan'); const t = document.querySelector('#docBody').innerText; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove()); __MLC.S.parts.final.polling = true; return /Lock Polling parties in the final randomisation first/.test(t); });
   ok(cpLocked, 'communication plan is not produced before the final polling tagging is locked');
+  const cpPending = await page.evaluate(() => { __MLC.S.parts.final.micro = false; __MLC.ACT.report('commPlan'); const t = document.querySelector('#docBody').innerText; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove()); __MLC.S.parts.final.micro = true; return /Pending — Micro Observer final tagging not locked/.test(t); });
+  ok(cpPending, 'MO row says "Pending" while Micro Observer final tagging is not locked');
   const dlc = page.waitForEvent('download'); await page.evaluate(() => __MLC.ACT.exportCommPlan()); const dcp = await dlc;
   ok(/Communication_Plan_.*\.xlsx$/.test(dcp.suggestedFilename()), 'Excel download works: ' + dcp.suggestedFilename());
 

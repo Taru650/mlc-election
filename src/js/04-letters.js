@@ -197,7 +197,7 @@ VIEWS.reports = () => {
       ${card('Power vesting list', 'Party-wise Presiding Officer and Polling Officer-1 — PIN, name, designation, office, mobile — for approval of magisterial powers.', b('report', 'powerVesting', 'Open', sp.polling) + b('exportPowerVesting', '', 'Excel', sp.polling))}
       ${card('2nd letters — PCCP', 'Booth not disclosed.', b('previewSecond', 'pccp', 'Open', sp.pccp && S.second.pccp.length))}
       ${card('2nd letters — Micro Observers', 'Booth not disclosed.', b('previewSecond', 'micro', 'Open', sp.micro && S.second.micro.length))}
-      ${card('Communication plan', 'After final booth tagging: for every booth — booth no. & full name, then PrO, P1, P2, P3 with PIN, name, designation and mobile.', b('report', 'commPlan', 'Open (PDF / Word)', fp.polling) + b('exportCommPlan', '', 'Excel', fp.polling))}
+      ${card('Communication plan', 'After final booth tagging: for every booth — booth no. & full name, then PrO, P1, P2, P3 and Micro Observer with PIN, name, designation and mobile.', b('report', 'commPlan', 'Open (PDF / Word)', fp.polling) + b('exportCommPlan', '', 'Excel', fp.polling))}
       ${card('Final letters — main parties', 'Booth disclosed. Office copy (1 per booth) or distribution set (4 per booth, ✔ before PrO / P1 / P2 / P3).', b('finalLetters', 'polling', 'Office copy', fp.polling) + b('finalLetters', 'polling4', '4 copies ✔', fp.polling))}
       ${card('Final letters — PCCP / MO', 'Booth disclosed.', b('finalLetters', 'pccp', 'PCCP', fp.pccp && S.second.pccp.length) + b('finalLetters', 'micro', 'Micro Obs.', fp.micro && S.second.micro.length))}
       ${card('Final letters — reserve', 'One letter per reserve officer of each locked part.', b('finalLetters', 'reserve', 'Open', PART_KINDS.some(k => fp[k])))}
@@ -254,10 +254,22 @@ ACT.exportPowerVesting = () => {
 };
 
 /* ---------- communication plan: one block per booth (after final polling tagging is locked) ---------- */
-function commPlanData() {
-  return S.booths.map(b => { const p = finalPartyOf(b); return p ? { b, p, rows: PARTY_ROLES.map(r => ({ r, o: officerByPin(p[r]) || {} })) } : null; }).filter(Boolean);
+/** Micro Observer row for a booth: the tagged MO, or a note when none is allotted / tagging not yet locked. */
+function commPlanMoRow(b) {
+  if (!partApplicable('micro')) return null;
+  if (!S.parts.final.micro) return { r: 'MO', o: {}, note: 'Pending — Micro Observer final tagging not locked' };
+  const x = tagged('micro', b.id);
+  return x ? { r: 'MO', o: officerByPin(x.pin) || {}, order: x.orderNo } : { r: 'MO', o: {}, note: 'No Micro Observer allotted to this booth' };
 }
-REPORTS.commPlan = ['Communication plan (booth-wise: PrO, P1, P2, P3)', () => {
+function commPlanData() {
+  return S.booths.map(b => {
+    const p = finalPartyOf(b); if (!p) return null;
+    const rows = PARTY_ROLES.map(r => ({ r, o: officerByPin(p[r]) || {} }));
+    const mo = commPlanMoRow(b); if (mo) rows.push(mo);
+    return { b, p, rows };
+  }).filter(Boolean);
+}
+REPORTS.commPlan = ['Communication plan (booth-wise: PrO, P1, P2, P3, Micro Observer)', () => {
   if (!S.parts.final.polling) return '<div class="alert info">Lock Polling parties in the final randomisation first — the communication plan is generated after booth tagging.</div>';
   const data = commPlanData();
   return `<div class="doc commplan"><div class="c b" style="font-size:16px">${esc(T().electionTitle)}</div><div class="c b" style="margin-bottom:10px">COMMUNICATION PLAN — ${esc(T().district)} (${data.length} booths)</div>
@@ -265,12 +277,12 @@ REPORTS.commPlan = ['Communication plan (booth-wise: PrO, P1, P2, P3)', () => {
       <div class="cp-head">Booth No. ${esc(boothLabel(b))} — ${esc(b.name)}</div>
       <div class="cp-sub">Block: ${esc(b.block)} · Constituency: ${esc(constName(b.const))} · Party No: <b>${esc(p.partyNo)}</b></div>
       <table class="lt"><tr><th style="width:24%">Post</th><th style="width:11%">PIN</th><th style="width:26%">Name</th><th style="width:26%">Designation</th><th>Mobile</th></tr>
-      ${rows.map(({ r, o }) => `<tr><td class="nowrap">${esc(DUTY_BY_KEY[r].label)}</td><td><b>${esc(o.pin)}</b></td><td>${esc(o.name)}</td><td>${esc(o.designation)}</td><td><b>${esc(o.mobile)}</b></td></tr>`).join('')}
+      ${rows.map(({ r, o, note }) => note ? `<tr><td class="nowrap">${esc(DUTY_BY_KEY[r].label)}</td><td colspan="4"><i>${esc(note)}</i></td></tr>` : `<tr><td class="nowrap">${esc(DUTY_BY_KEY[r].label)}</td><td><b>${esc(o.pin)}</b></td><td>${esc(o.name)}</td><td>${esc(o.designation)}</td><td><b>${esc(o.mobile)}</b></td></tr>`).join('')}
       </table></div>`).join('')}
     <div class="small" style="margin-top:6px">Generated: ${esc(nowStamp())}</div></div>`;
 }];
 function commPlanRows() {
-  return commPlanData().flatMap(({ b, p, rows }) => rows.map(({ r, o }) => [b.const, b.no, b.ext, b.name, b.block, p.partyNo, DUTY_BY_KEY[r].label, o.pin, o.name, o.designation, o.mobile]));
+  return commPlanData().flatMap(({ b, p, rows }) => rows.map(({ r, o, note }) => [b.const, b.no, b.ext, b.name, b.block, p.partyNo, DUTY_BY_KEY[r].label, note ? '' : o.pin, note || o.name, note ? '' : o.designation, note ? '' : o.mobile]));
 }
 const COMMPLAN_HEAD = ['Constituency', 'Booth No', 'Main/Aux', 'Booth Name', 'Block', 'Party No', 'Post', 'PIN', 'Name', 'Designation', 'Mobile'];
 ACT.exportCommPlan = () => {
