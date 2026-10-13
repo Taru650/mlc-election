@@ -102,6 +102,14 @@ DocxBuilder.prototype.paragraph = function (runs, el, alignOverride) {
 };
 /** Converts an element's content to block-level XML (paragraphs / tables). */
 DocxBuilder.prototype.blocks = function (el, alignOverride) {
+  if (el.nodeType === 1 && !el._keepDone && getComputedStyle(el).breakInside === 'avoid' && !el.classList.contains('doc')) {
+    el._keepDone = true;
+    const xml = this.blocks(el, alignOverride).join('');
+    el._keepDone = false;
+    const cut = xml.lastIndexOf('<w:tr>'); // paragraphs before the last row get keepNext → block never splits
+    const head = (cut > 0 ? xml.slice(0, cut) : xml).replace(/<w:pPr>/g, '<w:pPr><w:keepNext/>');
+    return [head + (cut > 0 ? xml.slice(cut) : '')];
+  }
   const out = [];
   if (el.nodeType === 1) {
     const cs = getComputedStyle(el);

@@ -89,6 +89,15 @@ each is marked “Copy n of 4 — for …”). The **Power vesting list** gives,
 Presiding Officer and Polling Officer-1 (PIN, name, designation, office, mobile) for approval
 of magisterial powers (print / PDF / Word / Excel).
 
+## Communication plan
+
+After the polling-party final tagging is locked, *Communication plan* gives one block per
+booth — **Booth No. — full booth name**, block, constituency and party number — followed by a
+table of Presiding Officer, P1, P2 and P3 with PIN, name, designation and mobile. Print / PDF /
+Word keep each booth's block on one page; *Excel* gives one row per officer per booth. Tests
+check every row against the booth → party → officer allotment (12- and 140-booth datasets).
+The older one-line-per-booth sheet is still available as *Communication matrix*.
+
 ## Letters as PDF and Word
 
 Every letter / report window has **Print / PDF** (choose “Save as PDF” as the printer) and

@@ -528,7 +528,7 @@ VIEWS.final = () => {
     const bar = `<div class="btn-row" style="margin-bottom:10px">
       <button class="btn bad" data-act="runFinal" data-arg="${kind}" ${secLocked && !locked ? '' : 'disabled'}>${has ? 'Re-run' : 'Run'} ${nm} → booth tagging</button>
       <button class="btn" data-act="finalLetters" data-arg="${kind}" ${locked ? '' : 'disabled'} title="Available after this part is locked">Final letters${kind === 'polling' ? ' (office copy)' : ''}</button>
-      ${kind === 'polling' ? `<button class="btn" data-act="finalLetters" data-arg="polling4" ${locked ? '' : 'disabled'} title="4 copies per party with ✔ before PrO / P1 / P2 / P3">Final letters — 4 copies ✔</button>` : ''}
+      ${kind === 'polling' ? `<button class="btn" data-act="finalLetters" data-arg="polling4" ${locked ? '' : 'disabled'} title="4 copies per party with ✔ before PrO / P1 / P2 / P3">Final letters — 4 copies ✔</button><button class="btn" data-act="report" data-arg="commPlan" ${locked ? '' : 'disabled'}>Communication plan</button>` : ''}
       ${ran[kind] ? `<span class="small muted">Last run: ${esc(ran[kind])}</span>` : ''}
       <span class="spacer"></span>${partLockBar('final', kind, secLocked && finalPartComplete(kind) && !bad.length)}</div>
       ${!secLocked ? `<div class="alert warn">Lock <b>${PART_NAME[kind]}</b> in the 2nd randomisation first. The other parts can be tagged meanwhile.</div>` : ''}

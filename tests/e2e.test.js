@@ -122,7 +122,7 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
     __MLC.ACT.finalLetters('polling'); out.finalMain = count(); close();
     __MLC.ACT.finalLetters('pccp'); out.finalPccp = count(); close();
     __MLC.ACT.finalLetters('reserve'); out.reserve = count(); close();
-    ['commPlan', 'boothWise', 'partyWise', 'dispatch', 'reserve', 'remaining', 'blockCheck', 'audit', 'log'].forEach(k => { __MLC.ACT.report(k); out['r_' + k] = count(); close(); });
+    ['commPlan', 'commMatrix', 'boothWise', 'partyWise', 'dispatch', 'reserve', 'remaining', 'blockCheck', 'audit', 'log'].forEach(k => { __MLC.ACT.report(k); out['r_' + k] = count(); close(); });
     document.querySelector('#attDuty') ;
     return out;
   });
@@ -179,6 +179,51 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   await page.evaluate(() => { document.querySelector('#printArea').innerHTML = ''; });
   const p4 = (pdf4.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
   ok(p4 === four.booths * 4, `4-copy final letters print as ${p4} A4 pages (expected ${four.booths * 4})`);
+
+  console.log('3d. Communication plan — every booth heading + PrO/P1/P2/P3 verified against the allotment (report and Excel)');
+  for (const ds of ['current', 'large']) {
+    const cp = await page.evaluate(ds => {
+      if (ds === 'large') {
+        window.__savedState = JSON.parse(JSON.stringify(__MLC.S));
+        __MLC.S = __MLC.generateTestState('large'); const S = __MLC.S;
+        S.second.parties = __MLC.formPollingParties().parties; S.parts.second.polling = true;
+        S.final.polling = __MLC.finalPolling(); S.parts.final.polling = true;
+      }
+      const S = __MLC.S, roles = ['PRO', 'P1', 'P2', 'P3'], labels = ['PRESIDING OFFICER', 'POLLING OFFICER-1', 'POLLING OFFICER-2', 'POLLING OFFICER-3'];
+      // ground truth computed directly from state, independent of report code
+      const truth = S.booths.map(b => { const p = S.second.parties.find(x => x.partyNo === S.final.polling[b.id]); return { b, p, offs: roles.map(r => S.officers.find(o => o.pin === p[r])) }; });
+      const errs = [];
+      __MLC.ACT.report('commPlan');
+      const blocks = [...document.querySelectorAll('#docBody .cp-booth')];
+      if (blocks.length !== truth.length) errs.push(`blocks ${blocks.length} vs booths ${truth.length}`);
+      blocks.forEach((blk, i) => {
+        const t = truth[i]; if (!t) return;
+        const head = blk.querySelector('.cp-head').innerText, sub = blk.querySelector('.cp-sub').innerText;
+        if (!head.includes('Booth No. ' + t.b.no) || !head.includes(t.b.name)) errs.push(`booth ${i}: heading "${head}"`);
+        if (!sub.includes(t.p.partyNo)) errs.push(`booth ${t.b.no}: party ${t.p.partyNo} missing`);
+        const rows = [...blk.querySelectorAll('tr')].slice(1).map(tr => [...tr.cells].map(c => c.innerText.trim()));
+        if (rows.length !== 4) errs.push(`booth ${t.b.no}: ${rows.length} rows`);
+        rows.forEach((r, k) => { const o = t.offs[k]; const want = [labels[k], o.pin, o.name, o.designation, o.mobile]; if (JSON.stringify(r) !== JSON.stringify(want)) errs.push(`booth ${t.b.no} row ${k}: ${r.join('|')} ≠ ${want.join('|')}`); });
+      });
+      document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+      // Excel export content (same rows the download contains)
+      const wb = XLSX.utils.book_new(); addSheet(wb, 'x', COMMPLAN_HEAD, commPlanRows());
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const xr = XLSX.utils.sheet_to_json(XLSX.read(new Uint8Array(buf), { type: 'array' }).Sheets.x, { defval: '', raw: false });
+      if (xr.length !== truth.length * 4) errs.push(`excel rows ${xr.length}`);
+      truth.forEach((t, i) => t.offs.forEach((o, k) => { const r = xr[i * 4 + k] || {};
+        if (String(r['Booth No']) !== String(t.b.no) || r['Party No'] !== t.p.partyNo || r.Post !== labels[k] || String(r.PIN) !== String(o.pin) || r.Name !== o.name || r.Designation !== o.designation || String(r.Mobile) !== String(o.mobile)) errs.push(`excel booth ${t.b.no} row ${k}`); }));
+      // every officer appears exactly once and only for the booth his party is tagged to
+      const seen = new Set(); truth.forEach(t => t.offs.forEach(o => { if (seen.has(o.pin)) errs.push('dup ' + o.pin); seen.add(o.pin); }));
+      return { booths: truth.length, errs: errs.slice(0, 5), n: errs.length };
+    }, ds);
+    ok(cp.n === 0, `${ds} dataset: ${cp.booths} booths × 4 officers match the allotment in report and Excel ${cp.errs.join(' | ')}`);
+  }
+  await page.evaluate(() => { __MLC.S = window.__savedState; });
+  const cpLocked = await page.evaluate(() => { __MLC.S.parts.final.polling = false; __MLC.ACT.report('commPlan'); const t = document.querySelector('#docBody').innerText; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove()); __MLC.S.parts.final.polling = true; return /Lock Polling parties in the final randomisation first/.test(t); });
+  ok(cpLocked, 'communication plan is not produced before the final polling tagging is locked');
+  const dlc = page.waitForEvent('download'); await page.evaluate(() => __MLC.ACT.exportCommPlan()); const dcp = await dlc;
+  ok(/Communication_Plan_.*\.xlsx$/.test(dcp.suggestedFilename()), 'Excel download works: ' + dcp.suggestedFilename());
 
   console.log('3b. Final party letter shows designation & office and prints one letter per A4 page');
   const fl = await page.evaluate(() => { __MLC.ACT.finalLetters('polling'); const h = document.querySelector('#docBody').innerHTML; document.querySelector('#printArea').innerHTML = h; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());

@@ -182,6 +182,11 @@ table.t td input,table.t td select{padding:4px 6px;font-size:.82rem}
 .doc table.lt.fl td{font-size:12.5px;line-height:1.3}
 .doc .tick{font-family:"Segoe UI Symbol","DejaVu Sans","Noto Sans Symbols 2",Arial,sans-serif;font-weight:700;font-size:1.15em;color:#000}
 .doc .copyfor{text-align:right;font-size:11px;font-style:italic;margin:0 0 4px}
+.doc.commplan .cp-booth{break-inside:avoid;page-break-inside:avoid;margin:0 0 12px}
+.doc.commplan .cp-head{font-weight:700;font-size:14px;border-bottom:1px solid #000;margin-top:6px}
+.doc.commplan .cp-sub{font-size:12px;margin:2px 0 3px}
+.doc.commplan table.lt{margin:0 0 4px}
+.doc.commplan table.lt td,.doc.commplan table.lt th{padding:2px 6px;font-size:12.5px}
 .doc .dsub{font-size:11.5px;line-height:1.25;margin-top:1px}
 .doc .po-next{margin-top:5px;padding-top:4px;border-top:1px dotted #888}
 .doc.reg table.lt th,.doc.reg table.lt td{font-size:12px;padding:3px 5px}
@@ -1658,7 +1663,7 @@ VIEWS.final = () => {
     const bar = `<div class="btn-row" style="margin-bottom:10px">
       <button class="btn bad" data-act="runFinal" data-arg="${kind}" ${secLocked && !locked ? '' : 'disabled'}>${has ? 'Re-run' : 'Run'} ${nm} → booth tagging</button>
       <button class="btn" data-act="finalLetters" data-arg="${kind}" ${locked ? '' : 'disabled'} title="Available after this part is locked">Final letters${kind === 'polling' ? ' (office copy)' : ''}</button>
-      ${kind === 'polling' ? `<button class="btn" data-act="finalLetters" data-arg="polling4" ${locked ? '' : 'disabled'} title="4 copies per party with ✔ before PrO / P1 / P2 / P3">Final letters — 4 copies ✔</button>` : ''}
+      ${kind === 'polling' ? `<button class="btn" data-act="finalLetters" data-arg="polling4" ${locked ? '' : 'disabled'} title="4 copies per party with ✔ before PrO / P1 / P2 / P3">Final letters — 4 copies ✔</button><button class="btn" data-act="report" data-arg="commPlan" ${locked ? '' : 'disabled'}>Communication plan</button>` : ''}
       ${ran[kind] ? `<span class="small muted">Last run: ${esc(ran[kind])}</span>` : ''}
       <span class="spacer"></span>${partLockBar('final', kind, secLocked && finalPartComplete(kind) && !bad.length)}</div>
       ${!secLocked ? `<div class="alert warn">Lock <b>${PART_NAME[kind]}</b> in the 2nd randomisation first. The other parts can be tagged meanwhile.</div>` : ''}
@@ -1982,7 +1987,7 @@ function reserveParties() { const used = new Set(Object.values(S.final.polling))
 function reserveSingles(kind) { const used = new Set(Object.values(S.final[kind])); return S.second[kind].filter(x => !used.has(x.orderNo)); }
 
 const REPORTS = {
-  commPlan: ['Communication plan (booth-wise contacts)', () => regDoc('COMMUNICATION PLAN', `<table class="lt"><tr><th>Const.</th><th>Booth</th><th>Block / location</th><th>Party</th><th>PrO</th><th>P1</th><th>P2</th><th>P3</th><th>Micro Observer</th><th>PCCP</th></tr>
+  commMatrix: ['Communication matrix (one line per booth, incl. MO / PCCP)', () => regDoc('COMMUNICATION MATRIX', `<table class="lt"><tr><th>Const.</th><th>Booth</th><th>Block / location</th><th>Party</th><th>PrO</th><th>P1</th><th>P2</th><th>P3</th><th>Micro Observer</th><th>PCCP</th></tr>
     ${S.booths.map(b => { const p = finalPartyOf(b), mo = tagged('micro', b.id), pc = tagged('pccp', b.id); return `<tr><td>${esc(b.const)}</td><td><b>${esc(boothLabel(b))}</b></td><td>${esc(b.block)}<br><small>${esc(b.name)}</small></td><td>${p ? esc(p.partyNo) : ''}</td>${p ? PARTY_ROLES.map(r => `<td>${nameMob(p[r])}</td>`).join('') : '<td colspan="4"></td>'}<td>${mo ? nameMob(mo.pin) : '—'}</td><td>${pc ? nameMob(pc.pin) : '—'}</td></tr>`; }).join('')}</table>`)],
   boothWise: ['Booth-wise party list', () => regDoc('BOOTH-WISE PARTY LIST', `<table class="lt"><tr><th>Const.</th><th>Booth</th><th>Location</th><th>Block</th><th>Party</th><th>Presiding Officer</th><th>PrO contact</th></tr>
     ${S.booths.map(b => { const p = finalPartyOf(b), o = p ? officerByPin(p.PRO) : null; return `<tr><td>${esc(b.const)}</td><td><b>${esc(boothLabel(b))}</b></td><td>${esc(b.name)}</td><td>${esc(b.block)}</td><td><b>${p ? esc(p.partyNo) : ''}</b></td><td>${o ? esc(o.name) + ' (' + esc(o.pin) + ')' : ''}</td><td>${o ? esc(o.mobile) : ''}</td></tr>`; }).join('')}</table>`, false)],
@@ -2018,10 +2023,11 @@ VIEWS.reports = () => {
       ${card('Power vesting list', 'Party-wise Presiding Officer and Polling Officer-1 — PIN, name, designation, office, mobile — for approval of magisterial powers.', b('report', 'powerVesting', 'Open', sp.polling) + b('exportPowerVesting', '', 'Excel', sp.polling))}
       ${card('2nd letters — PCCP', 'Booth not disclosed.', b('previewSecond', 'pccp', 'Open', sp.pccp && S.second.pccp.length))}
       ${card('2nd letters — Micro Observers', 'Booth not disclosed.', b('previewSecond', 'micro', 'Open', sp.micro && S.second.micro.length))}
+      ${card('Communication plan', 'After final booth tagging: for every booth — booth no. & full name, then PrO, P1, P2, P3 with PIN, name, designation and mobile.', b('report', 'commPlan', 'Open (PDF / Word)', fp.polling) + b('exportCommPlan', '', 'Excel', fp.polling))}
       ${card('Final letters — main parties', 'Booth disclosed. Office copy (1 per booth) or distribution set (4 per booth, ✔ before PrO / P1 / P2 / P3).', b('finalLetters', 'polling', 'Office copy', fp.polling) + b('finalLetters', 'polling4', '4 copies ✔', fp.polling))}
       ${card('Final letters — PCCP / MO', 'Booth disclosed.', b('finalLetters', 'pccp', 'PCCP', fp.pccp && S.second.pccp.length) + b('finalLetters', 'micro', 'Micro Obs.', fp.micro && S.second.micro.length))}
       ${card('Final letters — reserve', 'One letter per reserve officer of each locked part.', b('finalLetters', 'reserve', 'Open', PART_KINDS.some(k => fp[k])))}
-      ${Object.entries(REPORTS).filter(([k]) => k !== 'powerVesting').map(([k, [t]]) => card(t, k === 'remaining' ? 'After 2nd randomisation.' : k === 'audit' || k === 'log' ? 'Any time.' : k === 'exempted' ? 'Officers withdrawn, with reasons.' : 'After final randomisation.', b('report', k, 'Open', k === 'audit' || k === 'log' || (k === 'exempted' && Object.keys(S.exempt).length > 0) || (k !== 'exempted' && (k === 'remaining' ? S.second.parties.length > 0 : fin))))).join('')}
+      ${Object.entries(REPORTS).filter(([k]) => k !== 'powerVesting' && k !== 'commPlan').map(([k, [t]]) => card(t, k === 'remaining' ? 'After 2nd randomisation.' : k === 'audit' || k === 'log' ? 'Any time.' : k === 'exempted' ? 'Officers withdrawn, with reasons.' : 'After final randomisation.', b('report', k, 'Open', k === 'audit' || k === 'log' || (k === 'exempted' && Object.keys(S.exempt).length > 0) || (k !== 'exempted' && (k === 'remaining' ? S.second.parties.length > 0 : fin))))).join('')}
     </div></div>
     <div class="card"><div class="card-head"><h3>Excel exports</h3></div><div class="btn-row">
       <button class="btn" data-act="exportSecond" ${S.second.parties.length ? '' : 'disabled'}>2nd randomisation (Excel)</button>
@@ -2071,6 +2077,33 @@ ACT.exportPowerVesting = () => {
   addSheet(wb, 'Power_Vesting', ['Sl', 'Party No', 'Constituency', 'Post', 'PIN', 'Name', 'Designation', 'Office', 'Mobile'],
     powerVestingRows().map(({ p, r, o }, i) => [i + 1, p.partyNo, p.const, r === 'PRO' ? 'Presiding Officer' : 'Polling Officer-1', o.pin, o.name, o.designation, o.office, o.mobile]), [5, 14, 12, 18, 12, 26, 24, 34, 13]);
   saveWb(wb, `Power_Vesting_List_${safeName(S.setup.district)}.xlsx`);
+};
+
+/* ---------- communication plan: one block per booth (after final polling tagging is locked) ---------- */
+function commPlanData() {
+  return S.booths.map(b => { const p = finalPartyOf(b); return p ? { b, p, rows: PARTY_ROLES.map(r => ({ r, o: officerByPin(p[r]) || {} })) } : null; }).filter(Boolean);
+}
+REPORTS.commPlan = ['Communication plan (booth-wise: PrO, P1, P2, P3)', () => {
+  if (!S.parts.final.polling) return '<div class="alert info">Lock Polling parties in the final randomisation first — the communication plan is generated after booth tagging.</div>';
+  const data = commPlanData();
+  return `<div class="doc commplan"><div class="c b" style="font-size:16px">${esc(T().electionTitle)}</div><div class="c b" style="margin-bottom:10px">COMMUNICATION PLAN — ${esc(T().district)} (${data.length} booths)</div>
+    ${data.map(({ b, p, rows }) => `<div class="cp-booth">
+      <div class="cp-head">Booth No. ${esc(boothLabel(b))} — ${esc(b.name)}</div>
+      <div class="cp-sub">Block: ${esc(b.block)} · Constituency: ${esc(constName(b.const))} · Party No: <b>${esc(p.partyNo)}</b></div>
+      <table class="lt"><tr><th style="width:24%">Post</th><th style="width:11%">PIN</th><th style="width:26%">Name</th><th style="width:26%">Designation</th><th>Mobile</th></tr>
+      ${rows.map(({ r, o }) => `<tr><td class="nowrap">${esc(DUTY_BY_KEY[r].label)}</td><td><b>${esc(o.pin)}</b></td><td>${esc(o.name)}</td><td>${esc(o.designation)}</td><td><b>${esc(o.mobile)}</b></td></tr>`).join('')}
+      </table></div>`).join('')}
+    <div class="small" style="margin-top:6px">Generated: ${esc(nowStamp())}</div></div>`;
+}];
+function commPlanRows() {
+  return commPlanData().flatMap(({ b, p, rows }) => rows.map(({ r, o }) => [b.const, b.no, b.ext, b.name, b.block, p.partyNo, DUTY_BY_KEY[r].label, o.pin, o.name, o.designation, o.mobile]));
+}
+const COMMPLAN_HEAD = ['Constituency', 'Booth No', 'Main/Aux', 'Booth Name', 'Block', 'Party No', 'Post', 'PIN', 'Name', 'Designation', 'Mobile'];
+ACT.exportCommPlan = () => {
+  if (!S.parts.final.polling) return toast('Lock Polling parties in the final randomisation first.', 'bad');
+  const wb = XLSX.utils.book_new();
+  addSheet(wb, 'Communication_Plan', COMMPLAN_HEAD, commPlanRows(), [12, 9, 9, 40, 16, 14, 22, 12, 26, 26, 13]);
+  saveWb(wb, `Communication_Plan_${safeName(S.setup.district)}.xlsx`);
 };
 
 /* ---- 04b-exempt.js ---- */
@@ -2795,6 +2828,14 @@ DocxBuilder.prototype.paragraph = function (runs, el, alignOverride) {
 };
 /** Converts an element's content to block-level XML (paragraphs / tables). */
 DocxBuilder.prototype.blocks = function (el, alignOverride) {
+  if (el.nodeType === 1 && !el._keepDone && getComputedStyle(el).breakInside === 'avoid' && !el.classList.contains('doc')) {
+    el._keepDone = true;
+    const xml = this.blocks(el, alignOverride).join('');
+    el._keepDone = false;
+    const cut = xml.lastIndexOf('<w:tr>'); // paragraphs before the last row get keepNext → block never splits
+    const head = (cut > 0 ? xml.slice(0, cut) : xml).replace(/<w:pPr>/g, '<w:pPr><w:keepNext/>');
+    return [head + (cut > 0 ? xml.slice(cut) : '')];
+  }
   const out = [];
   if (el.nodeType === 1) {
     const cs = getComputedStyle(el);
