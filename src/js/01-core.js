@@ -43,6 +43,8 @@ function emptyTraining() {
   DUTIES.forEach(d => { t[d.label] = Array.from({ length: TRAINING_COUNT }, () => ({ date: '', start: '', end: '', venue: '' })); });
   return t;
 }
+/** Home / posting block values meaning "outside this district" — such a block never excludes any booth. */
+const DEFAULT_OUTSIDE_MARKERS = '999, 9999, 99999, 999999, OTHERS, OTHER, OUT OF DISTRICT, OUTSIDE DISTRICT, OTHER DISTRICT';
 function defaultSetup() {
   return {
     electionTitle: '', district: '', distCode: '', roCumDeo: '', reservePct: 10,
@@ -51,6 +53,7 @@ function defaultSetup() {
     authIssueTitle: '', authSubTitle: '', signature: '',
     ruleDistinctOffice: true, officeKeyMode: 'name',
     ruleDistinctPostingBlock: false, ruleDistinctHomeBlock: false,
+    outsideMarkers: DEFAULT_OUTSIDE_MARKERS,
   };
 }
 function defaultState() {
@@ -101,6 +104,17 @@ function officeKey(o) {
 /** A block reference {c: code, n: name}. Two references are the same block when both codes exist and are equal;
  *  when either code is missing, the (loosely compared) names decide. */
 function blockRef(code, name) { return { c: codeKey(code), n: blockKey(name) }; }
+let _outside = { src: null, codes: new Set(), names: new Set() };
+function outsideSets() {
+  const src = S.setup.outsideMarkers == null ? DEFAULT_OUTSIDE_MARKERS : String(S.setup.outsideMarkers);
+  if (_outside.src !== src) {
+    const toks = src.split(/[,;\n]+/).map(str).filter(Boolean);
+    _outside = { src, codes: new Set(toks.map(codeKey).filter(Boolean)), names: new Set(toks.map(blockKey).filter(Boolean)) };
+  }
+  return _outside;
+}
+/** True when a block reference is an out-of-district marker (e.g. code 999999 or name "Others"). */
+function isOutside(r) { const o = outsideSets(); return (!!r.c && o.codes.has(r.c)) || (!!r.n && o.names.has(r.n)); }
 function sameBlock(a, b) { if (a.c && b.c) return a.c === b.c; return !!a.n && a.n === b.n; }
 function blockId(r) { return r.c ? 'c:' + r.c : (r.n ? 'n:' + r.n : ''); }
 function boothBlockRef(b) { return blockRef(b.blockCode, b.block); }
@@ -182,7 +196,7 @@ function officersOfDuty(key) { const lbl = DUTY_BY_KEY[key].label; return S.offi
 function boothsOf(code) { return S.booths.filter(b => b.const === code); }
 function reserveTarget(required) { return Math.ceil(required * (1 + (Number(S.setup.reservePct) || 0) / 100)); }
 /** Home block and posting block of an officer as block references (used for exclusion). */
-function exclusionBlocks(o) { return [blockRef(o.homeBlockCode, o.homeBlock), blockRef(o.postingBlockCode, o.postingBlock)].filter(r => r.c || r.n); }
+function exclusionBlocks(o) { return [blockRef(o.homeBlockCode, o.homeBlock), blockRef(o.postingBlockCode, o.postingBlock)].filter(r => (r.c || r.n) && !isOutside(r)); }
 function canServeAt(o, booth) { if (!o || !booth) return false; const br = boothBlockRef(booth); return !exclusionBlocks(o).some(r => sameBlock(r, br)); }
 function boothLabel(b) { return b ? `${b.no}${b.ext && b.ext !== 'Main' ? ' (' + b.ext + ')' : ''}` : ''; }
 

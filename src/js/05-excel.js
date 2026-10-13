@@ -11,6 +11,7 @@ const SETUP_FIELDS = [
   ['matDeposit', 'Material deposit centre'],
   ['ruleDistinctOffice', 'Rule: 4 party members from different offices (Yes/No)'], ['officeKeyMode', 'Rule: same office means (name / nameaddr)'],
   ['ruleDistinctPostingBlock', 'Rule: party members different posting blocks (Yes/No)'], ['ruleDistinctHomeBlock', 'Rule: party members different home blocks (Yes/No)'],
+  ['outsideMarkers', 'Out-of-district block markers (codes / names, comma separated)'],
 ];
 const DATE_FIELDS = new Set(['pollDate', 'letterDate', 'matCollectDate']);
 const TIME_FIELDS = new Set(['pollFrom', 'pollTo', 'matCollectTime']);

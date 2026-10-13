@@ -300,6 +300,8 @@ function emptyTraining() {
   DUTIES.forEach(d => { t[d.label] = Array.from({ length: TRAINING_COUNT }, () => ({ date: '', start: '', end: '', venue: '' })); });
   return t;
 }
+/** Home / posting block values meaning "outside this district" — such a block never excludes any booth. */
+const DEFAULT_OUTSIDE_MARKERS = '999, 9999, 99999, 999999, OTHERS, OTHER, OUT OF DISTRICT, OUTSIDE DISTRICT, OTHER DISTRICT';
 function defaultSetup() {
   return {
     electionTitle: '', district: '', distCode: '', roCumDeo: '', reservePct: 10,
@@ -308,6 +310,7 @@ function defaultSetup() {
     authIssueTitle: '', authSubTitle: '', signature: '',
     ruleDistinctOffice: true, officeKeyMode: 'name',
     ruleDistinctPostingBlock: false, ruleDistinctHomeBlock: false,
+    outsideMarkers: DEFAULT_OUTSIDE_MARKERS,
   };
 }
 function defaultState() {
@@ -358,6 +361,17 @@ function officeKey(o) {
 /** A block reference {c: code, n: name}. Two references are the same block when both codes exist and are equal;
  *  when either code is missing, the (loosely compared) names decide. */
 function blockRef(code, name) { return { c: codeKey(code), n: blockKey(name) }; }
+let _outside = { src: null, codes: new Set(), names: new Set() };
+function outsideSets() {
+  const src = S.setup.outsideMarkers == null ? DEFAULT_OUTSIDE_MARKERS : String(S.setup.outsideMarkers);
+  if (_outside.src !== src) {
+    const toks = src.split(/[,;\n]+/).map(str).filter(Boolean);
+    _outside = { src, codes: new Set(toks.map(codeKey).filter(Boolean)), names: new Set(toks.map(blockKey).filter(Boolean)) };
+  }
+  return _outside;
+}
+/** True when a block reference is an out-of-district marker (e.g. code 999999 or name "Others"). */
+function isOutside(r) { const o = outsideSets(); return (!!r.c && o.codes.has(r.c)) || (!!r.n && o.names.has(r.n)); }
 function sameBlock(a, b) { if (a.c && b.c) return a.c === b.c; return !!a.n && a.n === b.n; }
 function blockId(r) { return r.c ? 'c:' + r.c : (r.n ? 'n:' + r.n : ''); }
 function boothBlockRef(b) { return blockRef(b.blockCode, b.block); }
@@ -439,7 +453,7 @@ function officersOfDuty(key) { const lbl = DUTY_BY_KEY[key].label; return S.offi
 function boothsOf(code) { return S.booths.filter(b => b.const === code); }
 function reserveTarget(required) { return Math.ceil(required * (1 + (Number(S.setup.reservePct) || 0) / 100)); }
 /** Home block and posting block of an officer as block references (used for exclusion). */
-function exclusionBlocks(o) { return [blockRef(o.homeBlockCode, o.homeBlock), blockRef(o.postingBlockCode, o.postingBlock)].filter(r => r.c || r.n); }
+function exclusionBlocks(o) { return [blockRef(o.homeBlockCode, o.homeBlock), blockRef(o.postingBlockCode, o.postingBlock)].filter(r => (r.c || r.n) && !isOutside(r)); }
 function canServeAt(o, booth) { if (!o || !booth) return false; const br = boothBlockRef(booth); return !exclusionBlocks(o).some(r => sameBlock(r, br)); }
 function boothLabel(b) { return b ? `${b.no}${b.ext && b.ext !== 'Main' ? ' (' + b.ext + ')' : ''}` : ''; }
 
@@ -723,7 +737,7 @@ function validateOfficers() {
     if (boothRefs.length) {
       [['home', o.homeBlockCode, o.homeBlock], ['posting', o.postingBlockCode, o.postingBlock]].forEach(([k, c, n]) => {
         const r = blockRef(c, n);
-        if ((r.c || r.n) && !boothRefs.some(br => sameBlock(r, br))) { add(i, 'warn', `${k} block not in booth list`); warnings.push(`${tag}: ${k} block "${blockText(c, n)}" does not match any booth block — check spelling / code.`); }
+        if ((r.c || r.n) && !isOutside(r) && !boothRefs.some(br => sameBlock(r, br))) { add(i, 'warn', `${k} block not in booth list`); warnings.push(`${tag}: ${k} block "${blockText(c, n)}" does not match any booth block — check spelling / code.`); }
       });
     }
   });
@@ -740,6 +754,7 @@ function validateBooths() {
     const tag = `Row ${i + 1} (booth ${b.no || '?'})`;
     if (!str(b.no)) { add(i, 'err', 'Booth no missing'); errors.push(`${tag}: booth number missing.`); }
     if (!str(b.block) && !str(b.blockCode)) { add(i, 'err', 'Block missing'); errors.push(`${tag}: block name or block code missing (needed for home/posting block exclusion).`); }
+    if ((str(b.block) || str(b.blockCode)) && isOutside(boothBlockRef(b))) { add(i, 'err', 'Out-of-district block'); errors.push(`${tag}: block "${blockText(b.blockCode, b.block)}" is an out-of-district marker — a booth must have its real block.`); }
     if (!codes.has(b.const)) { add(i, 'err', 'Unknown constituency'); errors.push(`${tag}: constituency "${b.const}" is not defined in Setup.`); }
     const k = b.const + '|' + str(b.no).toUpperCase();
     if (seen.has(k)) { add(i, 'err', 'Duplicate booth'); errors.push(`${tag}: booth ${b.no} repeated in ${b.const} (row ${seen.get(k) + 1}).`); } else seen.set(k, i);
@@ -762,6 +777,7 @@ function codeConsistencyWarnings() {
     const byName = new Map(), byCode = new Map();
     entries.forEach(([code, name]) => {
       const c = codeKey(code), n = normText(name); if (!c || !n) return;
+      if (what === 'Block' && isOutside(blockRef(code, name))) return; // 999999 / Others used with many district names — expected
       if (!byName.has(n)) byName.set(n, { label: str(name), codes: new Set() }); byName.get(n).codes.add(c);
       if (!byCode.has(c)) byCode.set(c, { label: str(code), names: new Set() }); byCode.get(c).names.add(str(name));
     });
@@ -774,6 +790,8 @@ function codeConsistencyWarnings() {
 }
 
 /* ---------------- engine helpers ---------------- */
+/** Block identity for the optional "different blocks within a party" rules; out-of-district counts as unique. */
+function distinctBlockId(r, fallback) { return isOutside(r) ? fallback : (blockId(r) || fallback); }
 function buildMeta() {
   const meta = new Map();
   S.officers.forEach(o => {
@@ -782,8 +800,8 @@ function buildMeta() {
       o, pin: String(o.pin),
       ex: exclusionBlocks(o),
       office: ok || ('__' + o.pin),
-      pb: blockId(blockRef(o.postingBlockCode, o.postingBlock)) || ('__p' + o.pin),
-      hb: blockId(blockRef(o.homeBlockCode, o.homeBlock)) || ('__h' + o.pin),
+      pb: distinctBlockId(blockRef(o.postingBlockCode, o.postingBlock), '__p' + o.pin),
+      hb: distinctBlockId(blockRef(o.homeBlockCode, o.homeBlock), '__h' + o.pin),
     });
   });
   return meta;
@@ -1027,12 +1045,12 @@ function runAudit() {
     }
     if (S.setup.ruleDistinctPostingBlock) {
       const b4 = [];
-      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => { const o = offOf(p[r]) || {}; return blockId(blockRef(o.postingBlockCode, o.postingBlock)); }); if (new Set(ks).size !== ks.length) b4.push(`${p.partyNo}: repeated posting block`); });
+      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => { const o = offOf(p[r]) || {}; return distinctBlockId(blockRef(o.postingBlockCode, o.postingBlock), '__p' + r); }); if (new Set(ks).size !== ks.length) b4.push(`${p.partyNo}: repeated posting block`); });
       add('2nd – Polling', 'All 4 members have different posting blocks', b4, sec.parties.length);
     }
     if (S.setup.ruleDistinctHomeBlock) {
       const b5 = [];
-      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => { const o = offOf(p[r]) || {}; return blockId(blockRef(o.homeBlockCode, o.homeBlock)); }); if (new Set(ks).size !== ks.length) b5.push(`${p.partyNo}: repeated home block`); });
+      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => { const o = offOf(p[r]) || {}; return distinctBlockId(blockRef(o.homeBlockCode, o.homeBlock), '__h' + r); }); if (new Set(ks).size !== ks.length) b5.push(`${p.partyNo}: repeated home block`); });
       add('2nd – Polling', 'All 4 members have different home blocks', b5, sec.parties.length);
     }
   }
@@ -1260,6 +1278,8 @@ VIEWS.setup = () => {
       <label class="check"><input type="checkbox" data-bind="setup.ruleDistinctOffice" ${st.ruleDistinctOffice ? 'checked' : ''} ${dis ? 'disabled' : ''}> <span><b>All 4 members of a polling party must be from different offices</b> (recommended)</span></label>
       <label class="f">Two officers are “same office” when they have the same <b>Office Code</b>; if an officer has no office code, the same…
         <select data-bind="setup.officeKeyMode" ${dis ? 'disabled' : ''}><option value="name" ${st.officeKeyMode === 'name' ? 'selected' : ''}>Office name (stricter)</option><option value="nameaddr" ${st.officeKeyMode === 'nameaddr' ? 'selected' : ''}>Office name + office address</option></select></label>
+      <label class="f span2">Out-of-district markers — a home / posting block with any of these codes or names is treated as outside the district, so it does not exclude any booth (comma separated)
+        <input type="text" data-bind="setup.outsideMarkers" value="${esc(st.outsideMarkers == null ? DEFAULT_OUTSIDE_MARKERS : st.outsideMarkers)}" ${dis ? 'disabled' : ''}></label>
       <label class="check"><input type="checkbox" data-bind="setup.ruleDistinctPostingBlock" ${st.ruleDistinctPostingBlock ? 'checked' : ''} ${dis ? 'disabled' : ''}> <span>Also: party members must have different <b>posting</b> blocks (optional, stricter)</span></label>
       <label class="check"><input type="checkbox" data-bind="setup.ruleDistinctHomeBlock" ${st.ruleDistinctHomeBlock ? 'checked' : ''} ${dis ? 'disabled' : ''}> <span>Also: party members must have different <b>home</b> blocks (optional, stricter)</span></label>
     </div>
@@ -1368,12 +1388,13 @@ VIEWS.officers = () => {
     <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Mobile</th><th>Duty</th><th>Home block</th><th>Posting block</th><th>Issues</th><th></th></tr></thead><tbody>
     ${slice.length ? slice.map(({ o, i }) => { const iss = v.rowIssues.get(i); return `<tr class="${iss ? (iss.level === 'err' ? 'err' : 'warnrow') : ''}">
       <td>${i + 1}</td><td class="pin">${esc(o.pin)}</td><td><b>${esc(o.name)}</b></td><td>${esc(o.designation)}</td><td>${o.officeCode ? `<span class="badge b-info">${esc(o.officeCode)}</span> ` : ''}${esc(o.office)}<div class="small muted">${esc(o.officeAddress)}</div></td><td>${esc(o.mobile)}</td>
-      <td>${o.duty ? dutyBadge(o.duty) : '<span class="badge b-bad">?</span>'}</td><td>${esc(blockText(o.homeBlockCode, o.homeBlock))}</td><td>${esc(blockText(o.postingBlockCode, o.postingBlock))}</td>
+      <td>${o.duty ? dutyBadge(o.duty) : '<span class="badge b-bad">?</span>'}</td><td>${blockCell(o.homeBlockCode, o.homeBlock)}</td><td>${blockCell(o.postingBlockCode, o.postingBlock)}</td>
       <td class="small">${iss ? esc(iss.msgs.join('; ')) : ''}</td>
       <td class="nowrap"><button class="btn sm" data-act="editOfficer" data-arg="${i}" ${dis ? 'disabled' : ''}>Edit</button> <button class="btn sm ghost-bad" data-act="delOfficer" data-arg="${i}" ${dis ? 'disabled' : ''}>✕</button></td></tr>`; }).join('')
       : '<tr><td colspan="11" class="center muted" style="padding:24px">No officers yet. Import an Excel file or add manually.</td></tr>'}
     </tbody></table></div></div>`;
 };
+function blockCell(code, name) { const r = blockRef(code, name); return esc(blockText(code, name)) + ((r.c || r.n) && isOutside(r) ? ' <span class="badge b-info">out of district</span>' : ''); }
 ACT.officerSearch = (a, el) => { UI.officerQuery = el.value; UI.officerPage = 1; const pos = el.selectionStart; render(); const n = $('[data-inp="officerSearch"]'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
 ACT.officerPage = d => { UI.officerPage += Number(d); render(); };
 ACT.delOfficer = i => { const o = S.officers[i]; if (!confirmBox(`Delete ${o.name} (${o.pin})?`)) return; S.officers.splice(Number(i), 1); persist(); render(); };
@@ -1788,7 +1809,7 @@ ACT.unlock = mod => {
 function openDoc(title, html) {
   const m = openModal({
     title, wide: true, body: html || '<div class="alert info">Nothing to show.</div>',
-    headExtra: '<button class="btn sm" data-act="printDoc">🖨 Print</button>',
+    headExtra: '<button class="btn sm" data-act="printDoc" title="Print, or choose “Save as PDF” as the printer">🖨 Print / PDF</button><button class="btn sm" data-act="wordDoc" title="Download as an editable Word file">⬇ Word (.docx)</button>',
   });
   m.querySelector('.modal-body').id = 'docBody';
 }
@@ -2022,6 +2043,7 @@ const SETUP_FIELDS = [
   ['matDeposit', 'Material deposit centre'],
   ['ruleDistinctOffice', 'Rule: 4 party members from different offices (Yes/No)'], ['officeKeyMode', 'Rule: same office means (name / nameaddr)'],
   ['ruleDistinctPostingBlock', 'Rule: party members different posting blocks (Yes/No)'], ['ruleDistinctHomeBlock', 'Rule: party members different home blocks (Yes/No)'],
+  ['outsideMarkers', 'Out-of-district block markers (codes / names, comma separated)'],
 ];
 const DATE_FIELDS = new Set(['pollDate', 'letterDate', 'matCollectDate']);
 const TIME_FIELDS = new Set(['pollFrom', 'pollTo', 'matCollectTime']);
@@ -2470,7 +2492,242 @@ ACT.exportFinal = () => {
   saveWb(wb, `Final_Deployment_${safeName(S.setup.district)}.xlsx`);
 };
 
-/* ---- 06-testdata.js ---- */
+/* ---- 07-word.js ---- */
+/* =====================================================================
+ * Word (.docx) export — built in the browser, no internet needed.
+ * Converts the rendered letters / reports (what you see in the preview)
+ * into WordprocessingML: paragraphs, bordered tables, bold / italic /
+ * underline, font sizes, alignment, the signature image and one page
+ * per letter. The zip container is written with SheetJS' CFB module.
+ * ===================================================================== */
+const DOCX_PX_TWIP = 15;           // 1 CSS px = 0.75 pt = 15 twips
+const DOCX_PAGE = { portrait: { w: 11906, h: 16838, m: 567 }, landscape: { w: 16838, h: 11906, m: 454 } }; // A4, 10 mm / 8 mm margins
+
+function xmlEsc(s) { return String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+const BLOCK_TAGS = new Set(['DIV', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'TABLE', 'UL', 'OL', 'LI', 'CENTER', 'SECTION', 'DETAILS', 'SUMMARY']);
+function cssColorHex(c) { const m = String(c).match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?/); if (!m || (m[4] !== undefined && Number(m[4]) === 0)) return ''; const h = [m[1], m[2], m[3]].map(x => Number(x).toString(16).padStart(2, '0')).join('').toUpperCase(); return h === 'FFFFFF' ? '' : h; }
+function isFlexRow(el) { const cs = getComputedStyle(el); return (cs.display === 'flex' || cs.display === 'inline-flex') && cs.flexDirection.startsWith('row'); }
+function isBlockEl(el) {
+  if (el.nodeType !== 1) return false;
+  if (BLOCK_TAGS.has(el.tagName)) return true;
+  const d = getComputedStyle(el).display;
+  return d === 'block' || d === 'flex' || d === 'table' || d === 'list-item';
+}
+/** Paragraph top border (e.g. the dashed cut line above a receipt). */
+function topBorderXml(cs) {
+  const bt = parseFloat(cs.borderTopWidth) || 0;
+  // only intentional separators (dashed cut line, dotted divider); solid borders belong to cells / page frames
+  if (!(bt > 0) || (cs.borderTopStyle !== 'dashed' && cs.borderTopStyle !== 'dotted')) return '';
+  const st = cs.borderTopStyle;
+  return `<w:pBdr><w:top w:val="${st}" w:sz="${Math.max(4, Math.round(bt * 6))}" w:space="4" w:color="${cssColorHex(cs.borderTopColor) || '444444'}"/></w:pBdr>`;
+}
+function hasBlockChild(el) { return Array.from(el.children).some(isBlockEl); }
+
+function DocxBuilder(landscape) {
+  this.pg = landscape ? DOCX_PAGE.landscape : DOCX_PAGE.portrait;
+  this.media = []; this.mediaBySrc = new Map(); this.pendingBreak = false; this.drawingSeq = 0;
+}
+DocxBuilder.prototype.runXml = function (text, cs, brk) {
+  const rp = [];
+  // element order follows the WordprocessingML schema (Word rejects out-of-order properties)
+  if (Number(cs.fontWeight) >= 600 || cs.fontWeight === 'bold') rp.push('<w:b/>');
+  if (cs.fontStyle === 'italic') rp.push('<w:i/>');
+  const col = cssColorHex(cs.color); if (col && col !== '000000') rp.push(`<w:color w:val="${col}"/>`);
+  const hp = Math.max(12, Math.round(parseFloat(cs.fontSize) * 1.5)); // px → half-points
+  rp.push(`<w:sz w:val="${hp}"/><w:szCs w:val="${hp}"/>`);
+  if (String(cs.textDecorationLine || cs.textDecoration).includes('underline')) rp.push('<w:u w:val="single"/>');
+  if (cs.textTransform === 'uppercase') text = text.toUpperCase();
+  return `<w:r><w:rPr>${rp.join('')}</w:rPr>${brk ? '<w:br/>' : `<w:t xml:space="preserve">${xmlEsc(text)}</w:t>`}</w:r>`;
+};
+DocxBuilder.prototype.imageXml = function (img) {
+  const src = img.getAttribute('src') || '';
+  const m = src.match(/^data:image\/(png|jpe?g|gif);base64,(.+)$/i);
+  if (!m) return '';
+  let item = this.mediaBySrc.get(src);
+  if (!item) {
+    const ext = m[1].toLowerCase().replace('jpg', 'jpeg');
+    item = { id: 'rIdImg' + (this.media.length + 1), name: `image${this.media.length + 1}.${ext === 'jpeg' ? 'jpg' : ext}`, ext, b64: m[2] };
+    this.media.push(item); this.mediaBySrc.set(src, item);
+  }
+  const w = Math.max(1, Math.round((img.offsetWidth || 120) * 9525)), h = Math.max(1, Math.round((img.offsetHeight || 40) * 9525));
+  const n = ++this.drawingSeq;
+  return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${w}" cy="${h}"/><wp:docPr id="${n}" name="Picture ${n}"/>
+<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+<pic:nvPicPr><pic:cNvPr id="${n}" name="${item.name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${item.id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+};
+/** Collects inline content (text, b, span, br, img …) into runs. */
+DocxBuilder.prototype.inlineRuns = function (nodes) {
+  const out = [];
+  const walk = node => {
+    if (node.nodeType === 3) {
+      const t = node.nodeValue.replace(/\s+/g, ' ');
+      if (t) out.push({ text: t, cs: getComputedStyle(node.parentElement) });
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    const cs = getComputedStyle(node);
+    if (cs.display === 'none' || cs.visibility === 'hidden') return;
+    if (node.tagName === 'BR') { out.push({ br: true, cs }); return; }
+    if (node.tagName === 'IMG') { out.push({ img: node }); return; }
+    node.childNodes.forEach(walk);
+  };
+  nodes.forEach(walk);
+  // trim leading / trailing spaces of the paragraph and around line breaks
+  for (let i = 0; i < out.length; i++) {
+    if (out[i].text == null) continue;
+    const prev = out[i - 1], next = out[i + 1];
+    if (!prev || prev.br) out[i].text = out[i].text.replace(/^ /, '');
+    if (!next || next.br) out[i].text = out[i].text.replace(/ $/, '');
+  }
+  return out.filter(r => r.br || r.img || r.text);
+};
+DocxBuilder.prototype.paragraph = function (runs, el, alignOverride) {
+  if (!runs.length) return '';
+  const cs = getComputedStyle(el);
+  const align = alignOverride || ({ center: 'center', right: 'right', end: 'right', justify: 'both' }[cs.textAlign] || 'left');
+  const before = Math.round((parseFloat(cs.marginTop) || 0) * DOCX_PX_TWIP), after = Math.round((parseFloat(cs.marginBottom) || 0) * DOCX_PX_TWIP);
+  const fs = parseFloat(cs.fontSize) || 14, lh = parseFloat(cs.lineHeight);
+  const line = isFinite(lh) && lh > 0 ? Math.round(lh * DOCX_PX_TWIP) : Math.round(fs * 1.2 * DOCX_PX_TWIP);
+  let ppr = (this.pendingBreak ? '<w:pageBreakBefore/>' : '') + topBorderXml(cs) + `<w:spacing w:before="${before}" w:after="${after}" w:line="${line}" w:lineRule="atLeast"/><w:jc w:val="${align}"/>`;
+  this.pendingBreak = false;
+  return `<w:p><w:pPr>${ppr}</w:pPr>${runs.map(r => r.img ? this.imageXml(r.img) : this.runXml(r.text || '', r.cs, r.br)).join('')}</w:p>`;
+};
+/** Converts an element's content to block-level XML (paragraphs / tables). */
+DocxBuilder.prototype.blocks = function (el, alignOverride) {
+  const out = [];
+  if (el.nodeType === 1) {
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || el.classList.contains('chooser')) return out;
+  }
+  if (el.tagName === 'IMG') { const p = this.paragraph([{ img: el }], el.parentElement || el, alignOverride); if (p) out.push(p); return out; }
+  if (el.tagName === 'TABLE') { out.push(this.table(el)); return out; }
+  if (el.nodeType === 1 && isFlexRow(el) && el.children.length > 1) { out.push(this.flexTable(el)); return out; }
+  if (!hasBlockChild(el)) { const p = this.paragraph(this.inlineRuns(Array.from(el.childNodes)), el, alignOverride); if (p) out.push(p); return out; }
+  let inline = [];
+  const flush = () => { const p = this.paragraph(this.inlineRuns(inline), el, alignOverride); if (p) out.push(p); inline = []; };
+  el.childNodes.forEach(n => {
+    if (n.nodeType === 1 && isBlockEl(n)) { flush(); out.push(...this.blocks(n, null)); }
+    else inline.push(n);
+  });
+  flush();
+  const bdr = el.nodeType === 1 ? topBorderXml(getComputedStyle(el)) : '';
+  if (bdr && out[0] && out[0].startsWith('<w:p><w:pPr>') && !out[0].includes('<w:pBdr>')) {
+    out[0] = out[0].replace(/^<w:p><w:pPr>(<w:pageBreakBefore\/>)?/, (m0, pb) => `<w:p><w:pPr>${pb || ''}${bdr}`);
+    const gap = Math.round((parseFloat(getComputedStyle(el).marginTop) || 0) * DOCX_PX_TWIP);
+    out[0] = out[0].replace(/w:before="(\d+)"/, (m0, v) => `w:before="${Math.max(Number(v), gap)}"`);
+  }
+  return out;
+};
+DocxBuilder.prototype.contentWidth = function () { return this.pg.w - 2 * this.pg.m; };
+DocxBuilder.prototype.cellXml = function (cell, width, extra = '', align) {
+  let inner = this.blocks(cell, align).join('');
+  if (!inner.includes('<w:p>') && !inner.includes('<w:p ')) inner += '<w:p/>';
+  else if (inner.endsWith('</w:tbl>')) inner += '<w:p/>';
+  return `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${extra}</w:tcPr>${inner}</w:tc>`;
+};
+DocxBuilder.prototype.table = function (tbl) {
+  const rows = Array.from(tbl.rows); if (!rows.length) return '';
+  const total = this.contentWidth(), tw = tbl.offsetWidth || 1;
+  const first = rows.reduce((a, r) => (r.cells.length > a.cells.length ? r : a), rows[0]);
+  const cols = Array.from(first.cells).map(c => Math.max(300, Math.round((c.offsetWidth / tw) * total)));
+  const sumC = cols.reduce((a, b) => a + b, 0); const scale = total / sumC; for (let i = 0; i < cols.length; i++) cols[i] = Math.round(cols[i] * scale);
+  const c0 = first.cells[0] ? getComputedStyle(first.cells[0]) : null;
+  const bordered = c0 && parseFloat(c0.borderTopWidth) > 0 && c0.borderTopStyle !== 'none';
+  const bd = bordered ? ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(s => `<w:${s} w:val="single" w:sz="6" w:space="0" w:color="000000"/>`).join('') : '';
+  let xml = `<w:tbl><w:tblPr><w:tblW w:w="${total}" w:type="dxa"/>${bordered ? `<w:tblBorders>${bd}</w:tblBorders>` : ''}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="90" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="90" w:type="dxa"/></w:tblCellMar></w:tblPr>`;
+  xml += `<w:tblGrid>${cols.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
+  rows.forEach(r => {
+    xml += `<w:tr><w:trPr><w:cantSplit/>${r.parentElement.tagName === 'THEAD' ? '<w:tblHeader/>' : ''}</w:trPr>`;
+    let ci = 0;
+    Array.from(r.cells).forEach(c => {
+      const span = Math.max(1, c.colSpan || 1);
+      const w = cols.slice(ci, ci + span).reduce((a, b) => a + b, 0) || Math.round(total / cols.length);
+      ci += span;
+      const cs = getComputedStyle(c);
+      let extra = span > 1 ? `<w:gridSpan w:val="${span}"/>` : '';
+      const bg = cssColorHex(cs.backgroundColor); if (bg) extra += `<w:shd w:val="clear" w:color="auto" w:fill="${bg}"/>`;
+      if (cs.verticalAlign === 'middle') extra += '<w:vAlign w:val="center"/>';
+      xml += this.cellXml(c, w, extra);
+    });
+    xml += '</w:tr>';
+  });
+  return xml + '</w:tbl>';
+};
+/** Flex rows (signature block, receipt columns, header line) become a borderless table. */
+DocxBuilder.prototype.flexTable = function (el) {
+  const kids = Array.from(el.childNodes).filter(n => (n.nodeType === 1 && getComputedStyle(n).display !== 'none') || (n.nodeType === 3 && n.nodeValue.trim()));
+  const total = this.contentWidth(), ew = el.offsetWidth || 1;
+  const cs = getComputedStyle(el), spread = cs.justifyContent === 'space-between';
+  const widths = kids.map(k => (k.nodeType === 1 && k.offsetWidth ? k.offsetWidth / ew : 1 / kids.length));
+  const sum = widths.reduce((a, b) => a + b, 0);
+  const cols = widths.map(w => Math.round((w / sum) * total));
+  let xml = `<w:tbl><w:tblPr><w:tblW w:w="${total}" w:type="dxa"/><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(s => `<w:${s} w:val="nil"/>`).join('')}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${cols.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr>`;
+  kids.forEach((k, i) => {
+    let align = null;
+    const kAlign = k.nodeType === 1 ? getComputedStyle(k).textAlign : 'start';
+    if (kAlign === 'center' || kAlign === 'right' || kAlign === 'end') align = kAlign === 'center' ? 'center' : 'right';
+    else if (spread && kids.length > 1) align = i === 0 ? 'left' : i === kids.length - 1 ? 'right' : 'center';
+    const vb = cs.alignItems === 'flex-end' ? '<w:vAlign w:val="bottom"/>' : '';
+    if (k.nodeType === 3) { const span = document.createElement('span'); span.textContent = k.nodeValue; el.insertBefore(span, k); el.removeChild(k); k = span; }
+    xml += this.cellXml(k, cols[i], vb, align);
+  });
+  return xml + '</w:tr></w:tbl>';
+};
+DocxBuilder.prototype.documentXml = function (docs) {
+  const body = [];
+  docs.forEach((d, i) => {
+    if (i > 0) this.pendingBreak = true;
+    const parts = this.blocks(d, null);
+    if (this.pendingBreak) { parts.unshift('<w:p><w:pPr><w:pageBreakBefore/><w:spacing w:before="0" w:after="0"/></w:pPr></w:p>'); this.pendingBreak = false; }
+    body.push(...parts);
+  });
+  const p = this.pg, land = p === DOCX_PAGE.landscape;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body.join('')}<w:sectPr><w:pgSz w:w="${p.w}" w:h="${p.h}"${land ? ' w:orient="landscape"' : ''}/><w:pgMar w:top="${p.m}" w:right="${p.m}" w:bottom="${p.m}" w:left="${p.m}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+};
+function docxStylesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="Times New Roman" w:cs="Times New Roman"/><w:sz w:val="21"/><w:szCs w:val="21"/><w:lang w:val="en-IN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
+<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style><w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:tblPr><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style></w:styles>`;
+}
+/** Builds a .docx (Uint8Array) from the rendered .doc elements inside container. */
+function buildDocx(container, title) {
+  const docs = Array.from(container.querySelectorAll('.doc'));
+  if (!docs.length) throw new Error('Nothing to export.');
+  const b = new DocxBuilder(docs.some(d => d.classList.contains('land')));
+  const docXml = b.documentXml(docs);
+  const enc = s => new TextEncoder().encode(s);
+  const cfb = XLSX.CFB.utils.cfb_new();
+  const add = (path, data) => XLSX.CFB.utils.cfb_add(cfb, path, data);
+  const exts = new Set(b.media.map(m => m.ext));
+  add('[Content_Types].xml', enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${[...exts].map(e => `<Default Extension="${e === 'jpeg' ? 'jpg' : e}" ContentType="image/${e}"/>`).join('')}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`));
+  add('_rels/.rels', enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`));
+  add('docProps/core.xml', enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xmlEsc(title)}</dc:title><dc:creator>MLC Polling Personnel Tool</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString().slice(0, 19)}Z</dcterms:created></cp:coreProperties>`));
+  add('word/document.xml', enc(docXml));
+  add('word/styles.xml', enc(docxStylesXml()));
+  add('word/_rels/document.xml.rels', enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${b.media.map(m => `<Relationship Id="${m.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${m.name}"/>`).join('')}</Relationships>`));
+  b.media.forEach(m => { const bin = atob(m.b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); add('word/media/' + m.name, u); });
+  return XLSX.CFB.write(cfb, { type: 'array', fileType: 'zip', compression: true });
+}
+ACT.wordDoc = () => {
+  const body = $('#docBody'); if (!body) return;
+  const title = ($('#modalRoot .overlay:last-child .modal-head .t') || {}).textContent || 'Letters';
+  toast('Preparing Word file…');
+  setTimeout(() => {
+    try {
+      const data = buildDocx(body, title);
+      downloadBlob(new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), `${safeName(title)}_${safeName(S.setup.district)}.docx`);
+      addLog(`Word file exported: ${title}`); persist();
+    } catch (e) { console.error(e); toast('Word export failed: ' + (e.message || e), 'bad'); }
+  }, 30);
+};
+
+/* ---- 08-testdata.js ---- */
 /* =====================================================================
  * Synthetic test data (fictitious names / numbers) + Save/Load page
  * ===================================================================== */
@@ -2559,9 +2816,12 @@ function generateTestState(profileKey) {
       else if (randInt(100) < 15) { posting = hq; office = pickRandom(OFFICE_TYPES.hq) + ' ' + P.district; }
       else { posting = pickRandom(P.blocks); office = `${pickRandom(OFFICE_TYPES.party)} ${posting}${randInt(3) === 0 ? '' : ' No.' + (1 + randInt(4))}`; }
       const home = randInt(100) < 40 ? posting : pickRandom(P.blocks);
+      // ~8% live outside the district, ~3% are posted outside (deputed) — marked with code 999999
+      const homeOut = randInt(100) < 8, postOut = !homeOut && d.key !== 'MO' && randInt(100) < 3;
+      if (postOut) { posting = 'Other District'; office = `${pickRandom(OFFICE_TYPES.hq)} (deputed from other district)`; }
       st.officers.push({
         pin: P.distCode + pad(serial, 5), name, designation: pickRandom(DESIG[d.key]), officeCode: officeCodeOf(office), office, officeAddress: `${posting}, ${P.district}`,
-        mobile: '90' + P.distCode + pad(serial, 6), duty: d.label, homeBlockCode: bCode[home], homeBlock: home, postingBlockCode: bCode[posting], postingBlock: posting,
+        mobile: '90' + P.distCode + pad(serial, 6), duty: d.label, homeBlockCode: homeOut ? '999999' : bCode[home], homeBlock: homeOut ? 'Others' : home, postingBlockCode: postOut ? '999999' : bCode[posting], postingBlock: posting,
         acNo: String(30000000000 + serial * 7919), bank: 'State Bank of India', branch: P.district, ifsc: 'SBIN000' + pad(1000 + randInt(8999), 4),
       });
       serial++;

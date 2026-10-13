@@ -86,7 +86,7 @@ function validateOfficers() {
     if (boothRefs.length) {
       [['home', o.homeBlockCode, o.homeBlock], ['posting', o.postingBlockCode, o.postingBlock]].forEach(([k, c, n]) => {
         const r = blockRef(c, n);
-        if ((r.c || r.n) && !boothRefs.some(br => sameBlock(r, br))) { add(i, 'warn', `${k} block not in booth list`); warnings.push(`${tag}: ${k} block "${blockText(c, n)}" does not match any booth block — check spelling / code.`); }
+        if ((r.c || r.n) && !isOutside(r) && !boothRefs.some(br => sameBlock(r, br))) { add(i, 'warn', `${k} block not in booth list`); warnings.push(`${tag}: ${k} block "${blockText(c, n)}" does not match any booth block — check spelling / code.`); }
       });
     }
   });
@@ -103,6 +103,7 @@ function validateBooths() {
     const tag = `Row ${i + 1} (booth ${b.no || '?'})`;
     if (!str(b.no)) { add(i, 'err', 'Booth no missing'); errors.push(`${tag}: booth number missing.`); }
     if (!str(b.block) && !str(b.blockCode)) { add(i, 'err', 'Block missing'); errors.push(`${tag}: block name or block code missing (needed for home/posting block exclusion).`); }
+    if ((str(b.block) || str(b.blockCode)) && isOutside(boothBlockRef(b))) { add(i, 'err', 'Out-of-district block'); errors.push(`${tag}: block "${blockText(b.blockCode, b.block)}" is an out-of-district marker — a booth must have its real block.`); }
     if (!codes.has(b.const)) { add(i, 'err', 'Unknown constituency'); errors.push(`${tag}: constituency "${b.const}" is not defined in Setup.`); }
     const k = b.const + '|' + str(b.no).toUpperCase();
     if (seen.has(k)) { add(i, 'err', 'Duplicate booth'); errors.push(`${tag}: booth ${b.no} repeated in ${b.const} (row ${seen.get(k) + 1}).`); } else seen.set(k, i);
@@ -125,6 +126,7 @@ function codeConsistencyWarnings() {
     const byName = new Map(), byCode = new Map();
     entries.forEach(([code, name]) => {
       const c = codeKey(code), n = normText(name); if (!c || !n) return;
+      if (what === 'Block' && isOutside(blockRef(code, name))) return; // 999999 / Others used with many district names — expected
       if (!byName.has(n)) byName.set(n, { label: str(name), codes: new Set() }); byName.get(n).codes.add(c);
       if (!byCode.has(c)) byCode.set(c, { label: str(code), names: new Set() }); byCode.get(c).names.add(str(name));
     });
@@ -137,6 +139,8 @@ function codeConsistencyWarnings() {
 }
 
 /* ---------------- engine helpers ---------------- */
+/** Block identity for the optional "different blocks within a party" rules; out-of-district counts as unique. */
+function distinctBlockId(r, fallback) { return isOutside(r) ? fallback : (blockId(r) || fallback); }
 function buildMeta() {
   const meta = new Map();
   S.officers.forEach(o => {
@@ -145,8 +149,8 @@ function buildMeta() {
       o, pin: String(o.pin),
       ex: exclusionBlocks(o),
       office: ok || ('__' + o.pin),
-      pb: blockId(blockRef(o.postingBlockCode, o.postingBlock)) || ('__p' + o.pin),
-      hb: blockId(blockRef(o.homeBlockCode, o.homeBlock)) || ('__h' + o.pin),
+      pb: distinctBlockId(blockRef(o.postingBlockCode, o.postingBlock), '__p' + o.pin),
+      hb: distinctBlockId(blockRef(o.homeBlockCode, o.homeBlock), '__h' + o.pin),
     });
   });
   return meta;
@@ -390,12 +394,12 @@ function runAudit() {
     }
     if (S.setup.ruleDistinctPostingBlock) {
       const b4 = [];
-      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => { const o = offOf(p[r]) || {}; return blockId(blockRef(o.postingBlockCode, o.postingBlock)); }); if (new Set(ks).size !== ks.length) b4.push(`${p.partyNo}: repeated posting block`); });
+      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => { const o = offOf(p[r]) || {}; return distinctBlockId(blockRef(o.postingBlockCode, o.postingBlock), '__p' + r); }); if (new Set(ks).size !== ks.length) b4.push(`${p.partyNo}: repeated posting block`); });
       add('2nd – Polling', 'All 4 members have different posting blocks', b4, sec.parties.length);
     }
     if (S.setup.ruleDistinctHomeBlock) {
       const b5 = [];
-      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => { const o = offOf(p[r]) || {}; return blockId(blockRef(o.homeBlockCode, o.homeBlock)); }); if (new Set(ks).size !== ks.length) b5.push(`${p.partyNo}: repeated home block`); });
+      sec.parties.forEach(p => { const ks = PARTY_ROLES.map(r => { const o = offOf(p[r]) || {}; return distinctBlockId(blockRef(o.homeBlockCode, o.homeBlock), '__h' + r); }); if (new Set(ks).size !== ks.length) b5.push(`${p.partyNo}: repeated home block`); });
       add('2nd – Polling', 'All 4 members have different home blocks', b5, sec.parties.length);
     }
   }

@@ -160,6 +160,8 @@ VIEWS.setup = () => {
       <label class="check"><input type="checkbox" data-bind="setup.ruleDistinctOffice" ${st.ruleDistinctOffice ? 'checked' : ''} ${dis ? 'disabled' : ''}> <span><b>All 4 members of a polling party must be from different offices</b> (recommended)</span></label>
       <label class="f">Two officers are “same office” when they have the same <b>Office Code</b>; if an officer has no office code, the same…
         <select data-bind="setup.officeKeyMode" ${dis ? 'disabled' : ''}><option value="name" ${st.officeKeyMode === 'name' ? 'selected' : ''}>Office name (stricter)</option><option value="nameaddr" ${st.officeKeyMode === 'nameaddr' ? 'selected' : ''}>Office name + office address</option></select></label>
+      <label class="f span2">Out-of-district markers — a home / posting block with any of these codes or names is treated as outside the district, so it does not exclude any booth (comma separated)
+        <input type="text" data-bind="setup.outsideMarkers" value="${esc(st.outsideMarkers == null ? DEFAULT_OUTSIDE_MARKERS : st.outsideMarkers)}" ${dis ? 'disabled' : ''}></label>
       <label class="check"><input type="checkbox" data-bind="setup.ruleDistinctPostingBlock" ${st.ruleDistinctPostingBlock ? 'checked' : ''} ${dis ? 'disabled' : ''}> <span>Also: party members must have different <b>posting</b> blocks (optional, stricter)</span></label>
       <label class="check"><input type="checkbox" data-bind="setup.ruleDistinctHomeBlock" ${st.ruleDistinctHomeBlock ? 'checked' : ''} ${dis ? 'disabled' : ''}> <span>Also: party members must have different <b>home</b> blocks (optional, stricter)</span></label>
     </div>
@@ -268,12 +270,13 @@ VIEWS.officers = () => {
     <div class="tbl-wrap"><table class="t"><thead><tr><th>#</th><th>PIN</th><th>Name</th><th>Designation</th><th>Office</th><th>Mobile</th><th>Duty</th><th>Home block</th><th>Posting block</th><th>Issues</th><th></th></tr></thead><tbody>
     ${slice.length ? slice.map(({ o, i }) => { const iss = v.rowIssues.get(i); return `<tr class="${iss ? (iss.level === 'err' ? 'err' : 'warnrow') : ''}">
       <td>${i + 1}</td><td class="pin">${esc(o.pin)}</td><td><b>${esc(o.name)}</b></td><td>${esc(o.designation)}</td><td>${o.officeCode ? `<span class="badge b-info">${esc(o.officeCode)}</span> ` : ''}${esc(o.office)}<div class="small muted">${esc(o.officeAddress)}</div></td><td>${esc(o.mobile)}</td>
-      <td>${o.duty ? dutyBadge(o.duty) : '<span class="badge b-bad">?</span>'}</td><td>${esc(blockText(o.homeBlockCode, o.homeBlock))}</td><td>${esc(blockText(o.postingBlockCode, o.postingBlock))}</td>
+      <td>${o.duty ? dutyBadge(o.duty) : '<span class="badge b-bad">?</span>'}</td><td>${blockCell(o.homeBlockCode, o.homeBlock)}</td><td>${blockCell(o.postingBlockCode, o.postingBlock)}</td>
       <td class="small">${iss ? esc(iss.msgs.join('; ')) : ''}</td>
       <td class="nowrap"><button class="btn sm" data-act="editOfficer" data-arg="${i}" ${dis ? 'disabled' : ''}>Edit</button> <button class="btn sm ghost-bad" data-act="delOfficer" data-arg="${i}" ${dis ? 'disabled' : ''}>✕</button></td></tr>`; }).join('')
       : '<tr><td colspan="11" class="center muted" style="padding:24px">No officers yet. Import an Excel file or add manually.</td></tr>'}
     </tbody></table></div></div>`;
 };
+function blockCell(code, name) { const r = blockRef(code, name); return esc(blockText(code, name)) + ((r.c || r.n) && isOutside(r) ? ' <span class="badge b-info">out of district</span>' : ''); }
 ACT.officerSearch = (a, el) => { UI.officerQuery = el.value; UI.officerPage = 1; const pos = el.selectionStart; render(); const n = $('[data-inp="officerSearch"]'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
 ACT.officerPage = d => { UI.officerPage += Number(d); render(); };
 ACT.delOfficer = i => { const o = S.officers[i]; if (!confirmBox(`Delete ${o.name} (${o.pin})?`)) return; S.officers.splice(Number(i), 1); persist(); render(); };

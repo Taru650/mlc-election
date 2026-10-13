@@ -51,6 +51,11 @@ computer. The project Excel file is the real backup.
   compared loosely (case, spaces, punctuation and the word “block” ignored). Codes ignore
   spaces and leading zeros (`0101` = `101`). The tool warns when one name appears with two
   codes (likely a wrong code) or one code with two spellings (harmless; code wins).
+* **Out-of-district blocks:** a home or posting block given as `999999` (or `999`, `Others`,
+  `Out of District` … — the list is editable in Setup) is treated as outside the district and
+  excludes no booth. An officer living outside the district can therefore be tagged in any
+  block except his/her (in-district) posting block; one with both blocks outside can go to
+  every block. A booth may not use these markers.
 * **Secrecy:** the 2nd and final randomisation screens (and the shuffle animation) show only
   PINs. Names, designations, offices, mobiles and blocks appear only in letters, reports,
   attendance sheets and Excel exports.
@@ -64,6 +69,12 @@ Randomness uses the browser's cryptographic generator (`crypto.getRandomValues`)
 
 If the data cannot satisfy the rules (e.g. every Presiding Officer lives or works in one
 block that has booths), the tool says exactly which block and duty is short.
+
+## Letters as PDF and Word
+
+Every letter / report window has **Print / PDF** (choose “Save as PDF” as the printer) and
+**Word (.docx)**. The Word file is built inside the browser from the same layout — bordered
+tables, signature image, one letter per page — and opens in MS Word or LibreOffice for editing.
 
 ## File formats
 

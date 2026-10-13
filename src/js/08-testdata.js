@@ -86,9 +86,12 @@ function generateTestState(profileKey) {
       else if (randInt(100) < 15) { posting = hq; office = pickRandom(OFFICE_TYPES.hq) + ' ' + P.district; }
       else { posting = pickRandom(P.blocks); office = `${pickRandom(OFFICE_TYPES.party)} ${posting}${randInt(3) === 0 ? '' : ' No.' + (1 + randInt(4))}`; }
       const home = randInt(100) < 40 ? posting : pickRandom(P.blocks);
+      // ~8% live outside the district, ~3% are posted outside (deputed) — marked with code 999999
+      const homeOut = randInt(100) < 8, postOut = !homeOut && d.key !== 'MO' && randInt(100) < 3;
+      if (postOut) { posting = 'Other District'; office = `${pickRandom(OFFICE_TYPES.hq)} (deputed from other district)`; }
       st.officers.push({
         pin: P.distCode + pad(serial, 5), name, designation: pickRandom(DESIG[d.key]), officeCode: officeCodeOf(office), office, officeAddress: `${posting}, ${P.district}`,
-        mobile: '90' + P.distCode + pad(serial, 6), duty: d.label, homeBlockCode: bCode[home], homeBlock: home, postingBlockCode: bCode[posting], postingBlock: posting,
+        mobile: '90' + P.distCode + pad(serial, 6), duty: d.label, homeBlockCode: homeOut ? '999999' : bCode[home], homeBlock: homeOut ? 'Others' : home, postingBlockCode: postOut ? '999999' : bCode[posting], postingBlock: posting,
         acNo: String(30000000000 + serial * 7919), bank: 'State Bank of India', branch: P.district, ifsc: 'SBIN000' + pad(1000 + randInt(8999), 4),
       });
       serial++;

@@ -4,7 +4,7 @@
 function openDoc(title, html) {
   const m = openModal({
     title, wide: true, body: html || '<div class="alert info">Nothing to show.</div>',
-    headExtra: '<button class="btn sm" data-act="printDoc">🖨 Print</button>',
+    headExtra: '<button class="btn sm" data-act="printDoc" title="Print, or choose “Save as PDF” as the printer">🖨 Print / PDF</button><button class="btn sm" data-act="wordDoc" title="Download as an editable Word file">⬇ Word (.docx)</button>',
   });
   m.querySelector('.modal-body').id = 'docBody';
 }

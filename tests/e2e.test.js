@@ -283,6 +283,58 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   ok(codes.viol === 0 && codes.tags > 3000, `misspelt block names, correct codes: ${codes.tags} tags, ${codes.viol} in own home/posting block`);
   ok(codes.namesOnlyBlind === true, 'control: with codes removed, misspelt names alone would not have been caught');
 
+  console.log('7e. Out-of-district home / posting block (999999, "Others") excludes nothing');
+  const od = await page.evaluate(() => {
+    __MLC.S = __MLC.generateTestState('small'); const S = __MLC.S;
+    const blocks = [...new Set(S.booths.map(b => b.block))];
+    // 6 officers of each party duty fully outside the district; 6 with only home outside
+    const full = [], half = [];
+    ['PRESIDING OFFICER', 'POLLING OFFICER-1', 'POLLING OFFICER-2', 'POLLING OFFICER-3', 'PATROLLING MAGISTRATE', 'MICRO OBSERVER'].forEach(d => {
+      const list = S.officers.filter(o => o.duty === d);
+      list.slice(0, 6).forEach(o => { o.homeBlock = 'Others'; o.homeBlockCode = '999999'; o.postingBlock = 'Other District'; o.postingBlockCode = '999999'; full.push(o.pin); });
+      list.slice(6, 12).forEach(o => { o.homeBlock = 'Others'; o.homeBlockCode = '999999'; half.push(o.pin); });
+    });
+    const v = __MLC.validateOfficers();
+    const fullBlocks = new Set(); let halfViol = 0, otherViol = 0;
+    for (let i = 0; i < 120; i++) {
+      S.second.parties = __MLC.formPollingParties().parties; S.second.pccp = __MLC.formSingles('pccp').items; S.second.micro = __MLC.formSingles('micro').items;
+      S.final.polling = __MLC.finalPolling(); S.final.pccp = __MLC.finalSingles('pccp'); S.final.micro = __MLC.finalSingles('micro');
+      const visit = (pin, b) => { const o = S.officers.find(x => x.pin === pin);
+        if (full.includes(pin)) fullBlocks.add(b.block);
+        else if (half.includes(pin)) { if (o.postingBlockCode === b.blockCode) halfViol++; }
+        else if ([o.homeBlockCode, o.postingBlockCode].includes(b.blockCode)) otherViol++; };
+      Object.entries(S.final.polling).forEach(([bid, pno]) => { const b = S.booths.find(x => x.id === bid), p = S.second.parties.find(x => x.partyNo === pno); ['PRO', 'P1', 'P2', 'P3'].forEach(r => visit(p[r], b)); });
+      ['pccp', 'micro'].forEach(k => Object.entries(S.final[k]).forEach(([bid, ord]) => visit(S.second[k].find(x => x.orderNo === ord).pin, S.booths.find(x => x.id === bid))));
+    }
+    const warnOut = v.warnings.filter(w => /999999|Others|Other District/.test(w));
+    S.booths[0].blockCode = '999999';
+    const boothErr = __MLC.validateBooths().errors.some(e => /out-of-district/.test(e));
+    return { allBlocks: blocks.length, fullBlocks: fullBlocks.size, halfViol, otherViol, warnOut: warnOut.length, boothErr, errs: v.errors.length };
+  });
+  ok(od.fullBlocks === od.allBlocks, `officers with home & posting 999999 were tagged in all ${od.allBlocks} blocks (${od.fullBlocks})`);
+  ok(od.halfViol === 0, 'home 999999 but posting in-district → still never tagged in posting block');
+  ok(od.otherViol === 0, 'all other officers still never tagged in home / posting block');
+  ok(od.errs === 0 && od.warnOut === 0, 'no errors / warnings raised for 999999 / "Others" blocks');
+  ok(od.boothErr, 'a booth cannot use the out-of-district code');
+
+  console.log('7f. Word (.docx) export of letters');
+  const wd = await page.evaluate(() => {
+    __MLC.S = __MLC.generateTestState('small'); const S = __MLC.S;
+    S.second.parties = __MLC.formPollingParties().parties; S.parts.second.polling = true;
+    S.final.polling = __MLC.finalPolling(); S.parts.final.polling = true;
+    __MLC.ACT.finalLetters('polling');
+    const data = buildDocx(document.querySelector('#docBody'), 'Final letters');
+    document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    const z = XLSX.CFB.read(data, { type: 'array' });
+    const doc = z.FileIndex.find(f => f.name === 'document.xml');
+    const xml = new TextDecoder().decode(doc.content);
+    const p = S.second.parties.find(x => x.partyNo === S.final.polling[S.booths[0].id]), pro = S.officers.find(o => o.pin === p.PRO);
+    return { zipOk: !!doc, pageBreaks: (xml.match(/<w:pageBreakBefore\/>/g) || []).length, hasName: xml.includes(pro.name), hasDesig: xml.includes(pro.designation), wellFormed: !new DOMParser().parseFromString(xml, 'application/xml').querySelector('parsererror') };
+  });
+  ok(wd.zipOk && wd.wellFormed, 'docx is a valid zip with well-formed document.xml');
+  ok(wd.pageBreaks === 11, `12 letters → 11 page breaks (got ${wd.pageBreaks})`);
+  ok(wd.hasName && wd.hasDesig, 'Word file contains officer name and designation');
+
   console.log('7d. Secrecy — randomisation screens show PINs only');
   const secrecy = await page.evaluate(async () => {
     __MLC.S = __MLC.generateTestState('small'); const S = __MLC.S;
