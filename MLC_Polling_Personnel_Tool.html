@@ -2290,7 +2290,7 @@ function resolveConst(v) {
   return c ? c.code : up;
 }
 function boothFromObj(r) {
-  const b = blankBooth(); b.id = newBoothId();
+  const b = blankBooth(); b.id = newBoothId(); b.ext = ''; // filled from the sheet; defaults to Main below
   let typeVal = '';
   Object.keys(r).forEach(h => {
     if (h === '__raw') return;
@@ -2553,8 +2553,25 @@ ACT.officerTemplate = () => {
   addSheet(wb, 'Officers', OFFICER_HEAD, [
     ['', 'RAMESH KUMAR', 'Headmaster', '10231', 'Middle School Piprahi', 'Piprahi', '9000000001', 'PRESIDING OFFICER', '0101', 'Sheohar', '0102', 'Piprahi', '1234567890', 'SBI', 'Sheohar', 'SBIN0000001'],
     ['', 'SUNITA DEVI', 'Teacher', '10458', 'High School Tariyani', 'Tariyani', '9000000002', 'POLLING OFFICER-1', '0105', 'Tariyani', '0105', 'Tariyani', '', '', '', ''],
+    ['', 'MANOJ SINGH', 'Branch Manager', '20017', 'State Bank of India, Sheohar', 'Sheohar', '9000000003', 'MICRO OBSERVER', '999999', 'Others', '0101', 'Sheohar', '', '', '', ''],
   ], OFFICER_WIDTHS);
-  XLSX.utils.book_append_sheet(wb, readme(README_LINES.slice(6, 10).concat(['', 'Leave PIN blank to auto-generate it (district code + serial). Delete the two example rows before use.'])), 'Instructions');
+  XLSX.utils.book_append_sheet(wb, readme([
+    'OFFICERS — one row per officer. Delete the three example rows before use.',
+    '',
+    'PIN                 — unique. Leave blank to auto-generate (district code + serial).',
+    'Name, Designation   — as printed on letters.',
+    'Office Code         — recommended. Same code = same office (spelling of Office Name then does not matter). Used for: 4 party members from 4 different offices.',
+    'Office Name / Address, Mobile — printed on letters and registers. Mobile 10 digits.',
+    'Duty                — PRESIDING OFFICER, POLLING OFFICER-1, POLLING OFFICER-2, POLLING OFFICER-3, PATROLLING MAGISTRATE, MICRO OBSERVER',
+    '                      (short forms PrO, P1, P2, P3, PCCP, MO also accepted).',
+    'Home Block Code / Home Block       — block where the officer lives.',
+    'Posting Block Code / Posting Block — block where the officer works.',
+    '                      Nobody is tagged to a booth in his/her home or posting block. When the officer and the booth both have a block code (e.g. 2011 census code), the code decides.',
+    '                      Name or code is enough; both are better. Leading zeros may be lost in Excel (0101 → 101) — this does not matter.',
+    'OUT OF DISTRICT     — if the home or posting block is outside the district, write code 999999 (or name "Others").',
+    '                      Such a block excludes no booth (the officer can go to any block except an in-district one he/she belongs to).',
+    'Account No, Bank, Branch, IFSC — optional; printed on training attendance sheets.',
+  ]), 'Instructions');
   saveWb(wb, 'Officers_Template.xlsx');
 };
 ACT.importOfficers = async mode => {
@@ -2579,7 +2596,17 @@ ACT.boothTemplate = () => {
   const wb = XLSX.utils.book_new();
   const c1 = (S.constituencies[0] || {}).code || 'TC', c2 = (S.constituencies[1] || {}).code || 'GC';
   addSheet(wb, 'Booths', BOOTH_HEAD, [[c1, '1', 'Main', 'Upgraded High School, Room 1', '0102', 'Piprahi'], [c1, '1A', 'Aux', 'Upgraded High School, Room 2', '0102', 'Piprahi'], [c2, '1', 'Main', 'Block Office Hall', '0105', 'Tariyani']], [13, 10, 10, 44, 12, 18]);
-  XLSX.utils.book_append_sheet(wb, readme(['Constituency = a code from Setup (' + S.constituencies.map(c => c.code).join(', ') + ').', 'Main/Aux = Main or Aux.', 'Block is mandatory — officers whose home or posting block is this block are never tagged to this booth.', 'Block Code (e.g. census block code) is recommended: when the booth and the officer both have a code, the code decides and spelling of the name does not matter.', 'Delete the example rows before use.']), 'Instructions');
+  XLSX.utils.book_append_sheet(wb, readme([
+    'BOOTHS — one row per polling station. Delete the example rows before use.',
+    '',
+    'Constituency        — a code from Setup (' + S.constituencies.map(c => c.code).join(', ') + '), or a name containing "Teachers" / "Graduates".',
+    'Booth No            — e.g. 12 or 12A; unique within the constituency.',
+    'Main/Aux            — Main or Aux.',
+    'Location / Building — printed on the final letter.',
+    'Block Code / Block  — mandatory (name or code). Officers whose home or posting block is this block are never tagged to this booth.',
+    '                      Block Code (e.g. 2011 census code) is recommended — it must be the same code used in the Officers sheet.',
+    '                      A booth must never use the out-of-district code 999999 / "Others".',
+  ]), 'Instructions');
   saveWb(wb, 'Booths_Template.xlsx');
 };
 ACT.importBooths = async mode => {

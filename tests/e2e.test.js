@@ -191,6 +191,16 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   });
   ok(rep.small === 200 && rep.large === 15 && !rep.fail.length, `small 200/200, large 15/15 runs passed all rules (slowest full run ${rep.ms.toFixed(0)} ms) ${rep.fail.slice(0, 2).join(' | ')}`);
 
+  console.log('5b. Main / Aux booth type survives Excel save & open (large dataset has Aux booths)');
+  const aux = await page.evaluate(() => {
+    __MLC.S = __MLC.generateTestState('large');
+    const before = __MLC.S.booths.filter(b => b.ext === 'Aux').length;
+    const buf = XLSX.write(__MLC.buildProjectWorkbook(), { bookType: 'xlsx', type: 'array' });
+    const st = __MLC.parseProjectWorkbook(XLSX.read(new Uint8Array(buf), { type: 'array' }));
+    return { before, after: st.booths.filter(b => b.ext === 'Aux').length };
+  });
+  ok(aux.before > 0 && aux.after === aux.before, `Aux booths: ${aux.before} saved → ${aux.after} reopened`);
+
   console.log('6. Randomness — party composition and booth tagging vary between runs');
   const vary = await page.evaluate(() => {
     __MLC.S = __MLC.generateTestState('small');
