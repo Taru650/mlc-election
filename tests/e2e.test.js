@@ -260,6 +260,43 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   const dlc = page.waitForEvent('download'); await page.evaluate(() => __MLC.ACT.exportCommPlan()); const dcp = await dlc;
   ok(/Communication_Plan_.*\.xlsx$/.test(dcp.suggestedFilename()), 'Excel download works: ' + dcp.suggestedFilename());
 
+  console.log('3e. Reporting venue / date / time for Polling Party, Micro Observer and PCCP in 2nd and final letters');
+  const repd = await page.evaluate(() => {
+    const S = __MLC.S, st = S.setup, r = {};
+    Object.assign(st, { ppReportVenue: 'PP-VENUE Stadium', ppReportDate: '2026-10-21', ppReportTime: '07:15', reportVenue: 'MO-VENUE Hall', moReportDate: '2026-10-20', moReportTime: '09:45', pcReportVenue: 'PC-VENUE Control Room', pcReportDate: '2026-10-19', pcReportTime: '06:30' });
+    const txt = fn => { fn(); const docs = [...document.querySelectorAll('#docBody .doc')].map(d => d.innerText); document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove()); return docs; };
+    const want = { pp: ['PP-VENUE Stadium', '21-10-2026', '07:15'], mo: ['MO-VENUE Hall', '20-10-2026', '09:45'], pc: ['PC-VENUE Control Room', '19-10-2026', '06:30'] };
+    const cases = { second_pp: [() => __MLC.ACT.previewSecond('polling'), 'pp'], second_pc: [() => __MLC.ACT.previewSecond('pccp'), 'pc'], second_mo: [() => __MLC.ACT.previewSecond('micro'), 'mo'],
+      final_pp: [() => __MLC.ACT.finalLetters('polling'), 'pp'], final_pc: [() => __MLC.ACT.finalLetters('pccp'), 'pc'], final_mo: [() => __MLC.ACT.finalLetters('micro'), 'mo'] };
+    r.bad = [];
+    Object.entries(cases).forEach(([name, [fn, k]]) => {
+      const docs = txt(fn); if (!docs.length) r.bad.push(name + ': no letters');
+      docs.forEach(t => {
+        want[k].forEach(v => { if (!t.includes(v)) r.bad.push(`${name}: missing ${v}`); });
+        Object.entries(want).filter(([kk]) => kk !== k).forEach(([, v]) => { if (t.includes(v[0])) r.bad.push(`${name}: shows other group's venue ${v[0]}`); });
+      });
+    });
+    // blanks: line omitted, no stray "on" / "undefined"
+    Object.assign(st, { ppReportVenue: '', ppReportDate: '', ppReportTime: '' });
+    const blank = txt(() => __MLC.ACT.previewSecond('polling'))[0] || '';
+    r.blankOk = !/shall report at/.test(blank) && !/undefined/.test(blank) && /1\) The poll/.test(blank) && /2\) Polling materials/.test(blank);
+    // setup screen fields bind to the data
+    const wasLocked = S.locks.setup; S.locks.setup = false; __MLC.ACT.go('setup');
+    const el = document.querySelector('[data-bind="setup.pcReportTime"]'); r.uiField = !!el && !!document.querySelector('[data-bind="setup.ppReportVenue"]') && !!document.querySelector('[data-bind="setup.moReportDate"]');
+    if (el && !el.disabled) { el.value = '05:05'; el.dispatchEvent(new Event('change', { bubbles: true })); r.bound = st.pcReportTime === '05:05'; } else r.bound = false;
+    S.locks.setup = wasLocked;
+    // Excel round trip of the new setup fields
+    Object.assign(st, { ppReportVenue: 'PP-VENUE Stadium', ppReportDate: '2026-10-21', ppReportTime: '07:15', pcReportTime: '06:30' });
+    const buf = XLSX.write(__MLC.buildProjectWorkbook(), { bookType: 'xlsx', type: 'array' });
+    const back = __MLC.parseProjectWorkbook(XLSX.read(new Uint8Array(buf), { type: 'array' })).setup;
+    r.excel = ['ppReportVenue', 'ppReportDate', 'ppReportTime', 'reportVenue', 'moReportDate', 'moReportTime', 'pcReportVenue', 'pcReportDate', 'pcReportTime'].every(k => back[k] === st[k]);
+    return r;
+  });
+  ok(repd.bad.length === 0, 'each 2nd / final letter shows its own reporting venue, date and time (PP, PCCP, MO) ' + repd.bad.slice(0, 3).join(' | '));
+  ok(repd.blankOk, 'blank reporting details: line left out, numbering closes up');
+  ok(repd.uiField && repd.bound === true, 'Setup screen has the 9 reporting fields and typing in them saves into the data');
+  ok(repd.excel, 'reporting details survive project Excel save & open');
+
   console.log('3b. Final party letter shows designation & office and prints one letter per A4 page');
   const fl = await page.evaluate(() => { __MLC.ACT.finalLetters('polling'); const h = document.querySelector('#docBody').innerHTML; document.querySelector('#printArea').innerHTML = h; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
     const S = __MLC.S, p = S.second.parties.find(x => x.partyNo === S.final.polling[S.booths[0].id]);
@@ -612,7 +649,7 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
     r.switched = switched; r.reselected = reselected; r.variety = sets.size;
     r.auditOk = __MLC.runAudit().filter(c => c.stage.startsWith('2nd')).every(c => c.ok);
     // tamper: move a locked TC party to GC → rule check fails
-    const p0 = S.second.parties.find(p => p.const === 'TC'); p0.const = 'GC';
+    const p0 = S.second.parties.find(p => p.const === 'TC' && ['PRO', 'P1', 'P2', 'P3'].some(k => S.constFix[p[k]] === 'TC')); p0.const = 'GC';
     r.tamperCaught = __MLC.runAudit().some(c => /TC ↔ GC/.test(c.rule) && !c.ok);
     p0.const = 'TC';
     // tamper final: tag a GC party to a TC booth → final rule fails

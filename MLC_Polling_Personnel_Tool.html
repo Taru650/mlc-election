@@ -331,7 +331,10 @@ function defaultSetup() {
   return {
     electionTitle: '', district: '', distCode: '', roCumDeo: '', reservePct: 10,
     pollDate: '', pollFrom: '08:00', pollTo: '16:00', letterDate: '', place: '',
-    reportVenue: '', matCollectVenue: '', matCollectDate: '', matCollectTime: '', matDeposit: '',
+    ppReportVenue: '', ppReportDate: '', ppReportTime: '', // polling party reporting
+    reportVenue: '', moReportDate: '', moReportTime: '',     // Micro Observer reporting (reportVenue kept for older files)
+    pcReportVenue: '', pcReportDate: '', pcReportTime: '',   // PCCP reporting
+    matCollectVenue: '', matCollectDate: '', matCollectTime: '', matDeposit: '',
     authIssueTitle: '', authSubTitle: '', signature: '',
     ruleDistinctOffice: true, officeKeyMode: 'name',
     ruleDistinctPostingBlock: false, ruleDistinctHomeBlock: false,
@@ -737,6 +740,8 @@ function validateSetup() {
   if (!st.letterDate) w.push('Letter issue date is empty.');
   if (!st.matCollectVenue) w.push('Material collection venue is empty.');
   if (!st.matDeposit) w.push('Material deposit centre is empty.');
+  [['Polling Party', 'ppReportVenue', 'ppReportDate', 'ppReportTime'], ['Micro Observer', 'reportVenue', 'moReportDate', 'moReportTime'], ['PCCP', 'pcReportVenue', 'pcReportDate', 'pcReportTime']]
+    .forEach(([l, v, d, t]) => { const miss = [[v, 'venue'], [d, 'date'], [t, 'time']].filter(([k]) => !str(st[k])).map(x => x[1]); if (miss.length) w.push(`${l} reporting ${miss.join(' / ')} empty — the line will be left out of the letters.`); });
   return { errors: e, warnings: w };
 }
 
@@ -1294,6 +1299,11 @@ VIEWS.setup = () => {
       ${inp('Appointing authority line (RO / DEO)', 'setup.roCumDeo', st.roCumDeo, { ...o, cls: 'span4', placeholder: 'Name, District Election Officer cum District Magistrate, …' })}
       ${inp('Signing title (middle)', 'setup.authIssueTitle', st.authIssueTitle, { ...o, cls: 'span2', placeholder: 'Authorised to Issue Officer I/c' })}
       ${inp('Signing authority (right)', 'setup.authSubTitle', st.authSubTitle, { ...o, cls: 'span2', placeholder: 'District Election Officer, …' })}
+      <div class="span4"><h4 style="margin:6px 0 0">Reporting details (printed in the 2nd and final appointment letters)</h4></div>
+      ${[['Polling Party', 'pp', 'ppReportVenue'], ['Micro Observer', 'mo', 'reportVenue'], ['PCCP', 'pc', 'pcReportVenue']].map(([lbl, k, venueKey]) => `
+      ${inp(`${lbl} — reporting venue`, 'setup.' + venueKey, st[venueKey], { ...o, cls: 'span2' })}
+      ${inp(`${lbl} — reporting date`, `setup.${k}ReportDate`, st[k + 'ReportDate'], { ...o, type: 'date' })}
+      ${inp(`${lbl} — reporting time`, `setup.${k}ReportTime`, st[k + 'ReportTime'], { ...o, type: 'time' })}`).join('')}
       <div class="span4"><label class="f">Signature image (JPG/PNG, optional — printed on letters)</label>
         <div class="btn-row">${st.signature ? `<img src="${esc(st.signature)}" style="max-height:48px;border:1px solid #ccd;padding:2px;border-radius:4px;background:#fff">` : '<span class="small muted">No signature uploaded</span>'}
         <button class="btn sm" data-act="uploadSignature" ${dis ? 'disabled' : ''}>Upload</button>${st.signature ? `<button class="btn sm" data-act="removeSignature" ${dis ? 'disabled' : ''}>Remove</button>` : ''}</div></div>
@@ -1320,7 +1330,6 @@ VIEWS.setup = () => {
       ${inp('Poll from', 'setup.pollFrom', st.pollFrom, { ...o, type: 'time' })}
       ${inp('Poll to', 'setup.pollTo', st.pollTo, { ...o, type: 'time' })}
       ${inp('Letter issue date', 'setup.letterDate', st.letterDate, { ...o, type: 'date' })}
-      ${inp('Reporting venue (Micro Observers)', 'setup.reportVenue', st.reportVenue, { ...o, cls: 'span3' })}
       ${inp('Material collection venue', 'setup.matCollectVenue', st.matCollectVenue, { ...o, cls: 'span2' })}
       ${inp('Collection date', 'setup.matCollectDate', st.matCollectDate, { ...o, type: 'date' })}
       ${inp('Collection time', 'setup.matCollectTime', st.matCollectTime, { ...o, type: 'time' })}
@@ -1929,6 +1938,15 @@ function firstLetterHtml(o) {
   </div>`;
 }
 
+/** Numbered instruction lines; empty entries are skipped and numbering closes up. */
+function numbered(lines) { return lines.filter(Boolean).map((l, i) => `${i + 1}) ${l}`).join('<br>'); }
+/** "venue on DD-MM-YYYY at HH:MM" for a duty's reporting details ('pp' polling party, 'mo', 'pc'); '' when no venue. */
+function reportAt(k) {
+  const st = T(), venue = k === 'mo' ? st.reportVenue : st[k + 'ReportVenue'], d = st[k + 'ReportDate'], t = st[k + 'ReportTime'];
+  if (!str(venue) && !d && !t) return '';
+  return `<b>${esc(venue || '—')}</b>${d ? ` on <b>${esc(fmtDate(d))}</b>` : ''}${t ? ` at <b>${esc(t)}</b>` : ''}`;
+}
+
 /* ---------- 2nd letters (booth NOT disclosed) ---------- */
 /** Tick shown before the member a printed copy belongs to (4-copy distribution sets). */
 const tick = (role, forRole) => (forRole && role === forRole ? '<span class="tick">✔</span> ' : '');
@@ -1941,7 +1959,7 @@ function secondPartyLetterHtml(p, forRole) {
     <div class="hdr2"><span>ELECTION URGENT</span><span>PARTY NO :- ${esc(p.partyNo)}</span></div>${copyLine(forRole)}
     ${rpaPara(`hereby appoint the following officers as a polling party for conducting the ${esc(T().electionTitle)} for <b>${esc(constName(p.const))}</b>.`)}
     <table class="lt"><tr><th>Duty</th><th>Name</th><th>PIN</th><th>Designation &amp; Office</th><th>Contact</th></tr>${rows}</table>
-    <div class="note"><b>IMPORTANT:</b><br>1) The poll will be taken on ${pollHours()}.<br>2) Polling materials are to be collected from ${matCollect()} and, after the poll, returned at <b>${esc(T().matDeposit)}</b>.<br>3) The polling station will be notified later through the Final Appointment Letter.</div>
+    <div class="note"><b>IMPORTANT:</b><br>${numbered([`The poll will be taken on ${pollHours()}.`, reportAt('pp') && `The polling party shall report at ${reportAt('pp')}.`, `Polling materials are to be collected from ${matCollect()} and, after the poll, returned at <b>${esc(T().matDeposit)}</b>.`, 'The polling station will be notified later through the Final Appointment Letter.'])}</div>
     ${sigBlock()}
   </div>`;
 }
@@ -1949,8 +1967,8 @@ function secondSingleLetterHtml(x, kind) {
   const o = officerByPin(x.pin) || {}, isP = kind === 'pccp';
   const duty = isP ? 'PATROLLING MAGISTRATE' : 'MICRO OBSERVER';
   const instr = isP
-    ? `1) The poll will be taken on ${pollHours()}.<br>2) Collect material from ${matCollect()} and return it at <b>${esc(T().matDeposit)}</b>.<br>3) Booth / route details will be notified later through the Final Appointment Letter.`
-    : `The poll will be taken on ${pollHours()}. Report at <b>${esc(T().reportVenue)}</b> for detailed instructions from the Observer and collection of forms. After the poll, report to the Observer at <b>${esc(T().matDeposit)}</b> personally. Booth will be notified later through the Final Appointment Letter.`;
+    ? numbered([`The poll will be taken on ${pollHours()}.`, reportAt('pc') && `Report at ${reportAt('pc')}.`, `Collect material from ${matCollect()} and return it at <b>${esc(T().matDeposit)}</b>.`, 'Booth / route details will be notified later through the Final Appointment Letter.'])
+    : numbered([`The poll will be taken on ${pollHours()}.`, reportAt('mo') && `Report at ${reportAt('mo')} for detailed instructions from the Observer and collection of forms.`, `After the poll, report to the Observer at <b>${esc(T().matDeposit)}</b> personally.`, 'Booth will be notified later through the Final Appointment Letter.']);
   return `<div class="doc">${annexHead('Order of Second Appointment Letter')}
     <div class="hdr2"><span>ELECTION URGENT</span><span>${isP ? 'PCCP' : 'ORDER'} NO :- ${esc(x.orderNo)}</span></div>
     ${rpaPara(`hereby appoint the following officer as <b>${isP ? 'Patrolling Magistrate' : 'Micro Observer'}</b> for conducting the ${esc(T().electionTitle)} for <b>${esc(constName(x.const))}</b>.`)}
@@ -1977,7 +1995,7 @@ function finalPartyLetterHtml(b, p, forRole) {
     <td>${tick('PRO', forRole)}<b>${esc(m('PRO').name)}</b>${desigOffice(m('PRO'))}<div class="dsub">PIN: ${esc(m('PRO').pin)} · Mob: ${esc(m('PRO').mobile)}</div></td>
     <td>${['P1', 'P2', 'P3'].map((r, i) => `<div class="po${i ? ' po-next' : ''}">${tick(r, forRole)}${i + 1}. <b>${esc(m(r).name)}</b> (${r})${desigOffice(m(r))}<div class="dsub">PIN: ${esc(m(r).pin)} · Mob: ${esc(m(r).mobile)}</div></div>`).join('')}</td>
     <td style="text-align:center;vertical-align:middle"><b>${esc(m('P1').name)}</b><br>(Polling Officer-1)${desigOffice(m('P1'))}</td></tr></table>
-    <div class="note">The poll will be taken on ${pollHours()}.<br>The Presiding Officer should collect the polling materials from ${matCollect()} and, after the poll, return them at <b>${esc(T().matDeposit)}</b>.</div>
+    <div class="note">The poll will be taken on ${pollHours()}.<br>${reportAt('pp') ? `The polling party shall report at ${reportAt('pp')}.<br>` : ''}The Presiding Officer should collect the polling materials from ${matCollect()} and, after the poll, return them at <b>${esc(T().matDeposit)}</b>.</div>
     ${sigBlock()}
   </div>`;
 }
@@ -1989,7 +2007,7 @@ function finalSingleLetterHtml(x, b, kind) {
     ${rpaPara(`hereby appoint the following officer as <b>${isP ? 'Patrolling Magistrate' : 'Micro Observer'}</b> for the polling station mentioned below, for <b>${esc(constName(x.const))}</b>.`)}
     <table class="lt"><tr><th style="width:55%">Employee Details</th><th>Polling station</th></tr>
     <tr><td>${officerDetails(o, false)}<br><b>Duty :- ${duty}</b></td><td><b>Booth No :</b> ${esc(boothLabel(b))}<br><b>Location :</b> ${esc(b.name)}<br><b>Block :</b> ${esc(b.block)}<br>Constituency : ${esc(b.const)}</td></tr></table>
-    <div class="note">The poll will be taken on ${pollHours()}.${isP ? ` Collect material from ${matCollect()} and return it at <b>${esc(T().matDeposit)}</b>.` : ` Report at <b>${esc(T().reportVenue)}</b> for instructions and, after the poll, report to the Observer at <b>${esc(T().matDeposit)}</b>.`}</div>
+    <div class="note">The poll will be taken on ${pollHours()}.${isP ? `${reportAt('pc') ? ` Report at ${reportAt('pc')}.` : ''} Collect material from ${matCollect()} and return it at <b>${esc(T().matDeposit)}</b>.` : `${reportAt('mo') ? ` Report at ${reportAt('mo')} for instructions.` : ''} After the poll, report to the Observer at <b>${esc(T().matDeposit)}</b>.`}</div>
     ${sigBlock()}
   </div>`;
 }
@@ -2302,15 +2320,18 @@ const SETUP_FIELDS = [
   ['electionTitle', 'Election title'], ['district', 'District'], ['distCode', 'District code'], ['place', 'Place on letters'],
   ['roCumDeo', 'Appointing authority (RO / DEO)'], ['authIssueTitle', 'Signing title (middle)'], ['authSubTitle', 'Signing authority (right)'],
   ['reservePct', 'Reserve %'], ['pollDate', 'Poll date (DD-MM-YYYY)'], ['pollFrom', 'Poll from (HH:MM)'], ['pollTo', 'Poll to (HH:MM)'],
-  ['letterDate', 'Letter issue date (DD-MM-YYYY)'], ['reportVenue', 'Reporting venue (Micro Observers)'],
+  ['letterDate', 'Letter issue date (DD-MM-YYYY)'],
+  ['ppReportVenue', 'Polling Party reporting venue'], ['ppReportDate', 'Polling Party reporting date (DD-MM-YYYY)'], ['ppReportTime', 'Polling Party reporting time (HH:MM)'],
+  ['reportVenue', 'Micro Observer reporting venue'], ['moReportDate', 'Micro Observer reporting date (DD-MM-YYYY)'], ['moReportTime', 'Micro Observer reporting time (HH:MM)'],
+  ['pcReportVenue', 'PCCP reporting venue'], ['pcReportDate', 'PCCP reporting date (DD-MM-YYYY)'], ['pcReportTime', 'PCCP reporting time (HH:MM)'],
   ['matCollectVenue', 'Material collection venue'], ['matCollectDate', 'Material collection date (DD-MM-YYYY)'], ['matCollectTime', 'Material collection time (HH:MM)'],
   ['matDeposit', 'Material deposit centre'],
   ['ruleDistinctOffice', 'Rule: 4 party members from different offices (Yes/No)'], ['officeKeyMode', 'Rule: same office means (name / nameaddr)'],
   ['ruleDistinctPostingBlock', 'Rule: party members different posting blocks (Yes/No)'], ['ruleDistinctHomeBlock', 'Rule: party members different home blocks (Yes/No)'],
   ['outsideMarkers', 'Out-of-district block markers (codes / names, comma separated)'],
 ];
-const DATE_FIELDS = new Set(['pollDate', 'letterDate', 'matCollectDate']);
-const TIME_FIELDS = new Set(['pollFrom', 'pollTo', 'matCollectTime']);
+const DATE_FIELDS = new Set(['pollDate', 'letterDate', 'matCollectDate', 'ppReportDate', 'moReportDate', 'pcReportDate']);
+const TIME_FIELDS = new Set(['pollFrom', 'pollTo', 'matCollectTime', 'ppReportTime', 'moReportTime', 'pcReportTime']);
 const BOOL_FIELDS = new Set(['ruleDistinctOffice', 'ruleDistinctPostingBlock', 'ruleDistinctHomeBlock']);
 const OFFICER_HEAD = ['PIN', 'Name', 'Designation', 'Office Code', 'Office Name', 'Office Address', 'Mobile', 'Duty', 'Home Block Code', 'Home Block', 'Posting Block Code', 'Posting Block', 'Account No', 'Bank', 'Branch', 'IFSC'];
 const OFFICER_KEYS = ['pin', 'name', 'designation', 'officeCode', 'office', 'officeAddress', 'mobile', 'duty', 'homeBlockCode', 'homeBlock', 'postingBlockCode', 'postingBlock', 'acNo', 'bank', 'branch', 'ifsc'];
@@ -3098,7 +3119,10 @@ function generateTestState(profileKey) {
   Object.assign(st.setup, {
     electionTitle: P.electionTitle, district: P.district, distCode: P.distCode, place: P.district, roCumDeo: P.roCumDeo,
     reservePct: 10, pollDate: '2026-10-23', pollFrom: '08:00', pollTo: '16:00', letterDate: '2026-10-03',
-    reportVenue: P.venue2, matCollectVenue: P.venue2, matCollectDate: '2026-10-22', matCollectTime: '10:00', matDeposit: 'MIT, Muzaffarpur',
+    ppReportVenue: `Dispatch Centre, ${P.venue2}`, ppReportDate: '2026-10-22', ppReportTime: '08:00',
+    reportVenue: P.venue2, moReportDate: '2026-10-22', moReportTime: '09:00',
+    pcReportVenue: `Control Room, Collectorate ${P.district}`, pcReportDate: '2026-10-22', pcReportTime: '07:30',
+    matCollectVenue: P.venue2, matCollectDate: '2026-10-22', matCollectTime: '10:00', matDeposit: 'MIT, Muzaffarpur',
     authIssueTitle: 'Authorised to Issue Officer I/c', authSubTitle: `District Election Officer, ${P.district}`,
   });
   st.constituencies = P.cons.map(c => ({ code: c.code, name: c.name, pccp: c.pccp, micro: c.micro }));

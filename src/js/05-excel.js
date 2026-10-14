@@ -6,15 +6,18 @@ const SETUP_FIELDS = [
   ['electionTitle', 'Election title'], ['district', 'District'], ['distCode', 'District code'], ['place', 'Place on letters'],
   ['roCumDeo', 'Appointing authority (RO / DEO)'], ['authIssueTitle', 'Signing title (middle)'], ['authSubTitle', 'Signing authority (right)'],
   ['reservePct', 'Reserve %'], ['pollDate', 'Poll date (DD-MM-YYYY)'], ['pollFrom', 'Poll from (HH:MM)'], ['pollTo', 'Poll to (HH:MM)'],
-  ['letterDate', 'Letter issue date (DD-MM-YYYY)'], ['reportVenue', 'Reporting venue (Micro Observers)'],
+  ['letterDate', 'Letter issue date (DD-MM-YYYY)'],
+  ['ppReportVenue', 'Polling Party reporting venue'], ['ppReportDate', 'Polling Party reporting date (DD-MM-YYYY)'], ['ppReportTime', 'Polling Party reporting time (HH:MM)'],
+  ['reportVenue', 'Micro Observer reporting venue'], ['moReportDate', 'Micro Observer reporting date (DD-MM-YYYY)'], ['moReportTime', 'Micro Observer reporting time (HH:MM)'],
+  ['pcReportVenue', 'PCCP reporting venue'], ['pcReportDate', 'PCCP reporting date (DD-MM-YYYY)'], ['pcReportTime', 'PCCP reporting time (HH:MM)'],
   ['matCollectVenue', 'Material collection venue'], ['matCollectDate', 'Material collection date (DD-MM-YYYY)'], ['matCollectTime', 'Material collection time (HH:MM)'],
   ['matDeposit', 'Material deposit centre'],
   ['ruleDistinctOffice', 'Rule: 4 party members from different offices (Yes/No)'], ['officeKeyMode', 'Rule: same office means (name / nameaddr)'],
   ['ruleDistinctPostingBlock', 'Rule: party members different posting blocks (Yes/No)'], ['ruleDistinctHomeBlock', 'Rule: party members different home blocks (Yes/No)'],
   ['outsideMarkers', 'Out-of-district block markers (codes / names, comma separated)'],
 ];
-const DATE_FIELDS = new Set(['pollDate', 'letterDate', 'matCollectDate']);
-const TIME_FIELDS = new Set(['pollFrom', 'pollTo', 'matCollectTime']);
+const DATE_FIELDS = new Set(['pollDate', 'letterDate', 'matCollectDate', 'ppReportDate', 'moReportDate', 'pcReportDate']);
+const TIME_FIELDS = new Set(['pollFrom', 'pollTo', 'matCollectTime', 'ppReportTime', 'moReportTime', 'pcReportTime']);
 const BOOL_FIELDS = new Set(['ruleDistinctOffice', 'ruleDistinctPostingBlock', 'ruleDistinctHomeBlock']);
 const OFFICER_HEAD = ['PIN', 'Name', 'Designation', 'Office Code', 'Office Name', 'Office Address', 'Mobile', 'Duty', 'Home Block Code', 'Home Block', 'Posting Block Code', 'Posting Block', 'Account No', 'Bank', 'Branch', 'IFSC'];
 const OFFICER_KEYS = ['pin', 'name', 'designation', 'officeCode', 'office', 'officeAddress', 'mobile', 'duty', 'homeBlockCode', 'homeBlock', 'postingBlockCode', 'postingBlock', 'acNo', 'bank', 'branch', 'ifsc'];

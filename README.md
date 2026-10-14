@@ -94,6 +94,13 @@ each is marked “Copy n of 4 — for …”). The **Power vesting list** gives,
 Presiding Officer and Polling Officer-1 (PIN, name, designation, office, mobile) for approval
 of magisterial powers (print / PDF / Word / Excel).
 
+## Reporting details
+
+*Election Setup → Election & authority → Reporting details* holds reporting **venue, date and
+time** separately for the **Polling Party**, **Micro Observer** and **PCCP**. They print in the
+respective 2nd and final appointment letters (a blank group is simply left out of the letter),
+and are saved in the project / configuration Excel.
+
 ## Communication plan
 
 After the polling-party final tagging is locked, *Communication plan* gives one block per

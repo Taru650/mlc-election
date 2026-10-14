@@ -44,7 +44,10 @@ function generateTestState(profileKey) {
   Object.assign(st.setup, {
     electionTitle: P.electionTitle, district: P.district, distCode: P.distCode, place: P.district, roCumDeo: P.roCumDeo,
     reservePct: 10, pollDate: '2026-10-23', pollFrom: '08:00', pollTo: '16:00', letterDate: '2026-10-03',
-    reportVenue: P.venue2, matCollectVenue: P.venue2, matCollectDate: '2026-10-22', matCollectTime: '10:00', matDeposit: 'MIT, Muzaffarpur',
+    ppReportVenue: `Dispatch Centre, ${P.venue2}`, ppReportDate: '2026-10-22', ppReportTime: '08:00',
+    reportVenue: P.venue2, moReportDate: '2026-10-22', moReportTime: '09:00',
+    pcReportVenue: `Control Room, Collectorate ${P.district}`, pcReportDate: '2026-10-22', pcReportTime: '07:30',
+    matCollectVenue: P.venue2, matCollectDate: '2026-10-22', matCollectTime: '10:00', matDeposit: 'MIT, Muzaffarpur',
     authIssueTitle: 'Authorised to Issue Officer I/c', authSubTitle: `District Election Officer, ${P.district}`,
   });
   st.constituencies = P.cons.map(c => ({ code: c.code, name: c.name, pccp: c.pccp, micro: c.micro }));

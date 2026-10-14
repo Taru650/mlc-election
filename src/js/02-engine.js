@@ -41,6 +41,8 @@ function validateSetup() {
   if (!st.letterDate) w.push('Letter issue date is empty.');
   if (!st.matCollectVenue) w.push('Material collection venue is empty.');
   if (!st.matDeposit) w.push('Material deposit centre is empty.');
+  [['Polling Party', 'ppReportVenue', 'ppReportDate', 'ppReportTime'], ['Micro Observer', 'reportVenue', 'moReportDate', 'moReportTime'], ['PCCP', 'pcReportVenue', 'pcReportDate', 'pcReportTime']]
+    .forEach(([l, v, d, t]) => { const miss = [[v, 'venue'], [d, 'date'], [t, 'time']].filter(([k]) => !str(st[k])).map(x => x[1]); if (miss.length) w.push(`${l} reporting ${miss.join(' / ')} empty — the line will be left out of the letters.`); });
   return { errors: e, warnings: w };
 }
 

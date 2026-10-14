@@ -120,6 +120,11 @@ VIEWS.setup = () => {
       ${inp('Appointing authority line (RO / DEO)', 'setup.roCumDeo', st.roCumDeo, { ...o, cls: 'span4', placeholder: 'Name, District Election Officer cum District Magistrate, …' })}
       ${inp('Signing title (middle)', 'setup.authIssueTitle', st.authIssueTitle, { ...o, cls: 'span2', placeholder: 'Authorised to Issue Officer I/c' })}
       ${inp('Signing authority (right)', 'setup.authSubTitle', st.authSubTitle, { ...o, cls: 'span2', placeholder: 'District Election Officer, …' })}
+      <div class="span4"><h4 style="margin:6px 0 0">Reporting details (printed in the 2nd and final appointment letters)</h4></div>
+      ${[['Polling Party', 'pp', 'ppReportVenue'], ['Micro Observer', 'mo', 'reportVenue'], ['PCCP', 'pc', 'pcReportVenue']].map(([lbl, k, venueKey]) => `
+      ${inp(`${lbl} — reporting venue`, 'setup.' + venueKey, st[venueKey], { ...o, cls: 'span2' })}
+      ${inp(`${lbl} — reporting date`, `setup.${k}ReportDate`, st[k + 'ReportDate'], { ...o, type: 'date' })}
+      ${inp(`${lbl} — reporting time`, `setup.${k}ReportTime`, st[k + 'ReportTime'], { ...o, type: 'time' })}`).join('')}
       <div class="span4"><label class="f">Signature image (JPG/PNG, optional — printed on letters)</label>
         <div class="btn-row">${st.signature ? `<img src="${esc(st.signature)}" style="max-height:48px;border:1px solid #ccd;padding:2px;border-radius:4px;background:#fff">` : '<span class="small muted">No signature uploaded</span>'}
         <button class="btn sm" data-act="uploadSignature" ${dis ? 'disabled' : ''}>Upload</button>${st.signature ? `<button class="btn sm" data-act="removeSignature" ${dis ? 'disabled' : ''}>Remove</button>` : ''}</div></div>
@@ -146,7 +151,6 @@ VIEWS.setup = () => {
       ${inp('Poll from', 'setup.pollFrom', st.pollFrom, { ...o, type: 'time' })}
       ${inp('Poll to', 'setup.pollTo', st.pollTo, { ...o, type: 'time' })}
       ${inp('Letter issue date', 'setup.letterDate', st.letterDate, { ...o, type: 'date' })}
-      ${inp('Reporting venue (Micro Observers)', 'setup.reportVenue', st.reportVenue, { ...o, cls: 'span3' })}
       ${inp('Material collection venue', 'setup.matCollectVenue', st.matCollectVenue, { ...o, cls: 'span2' })}
       ${inp('Collection date', 'setup.matCollectDate', st.matCollectDate, { ...o, type: 'date' })}
       ${inp('Collection time', 'setup.matCollectTime', st.matCollectTime, { ...o, type: 'time' })}

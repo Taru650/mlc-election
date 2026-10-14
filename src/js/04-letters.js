@@ -59,6 +59,15 @@ function firstLetterHtml(o) {
   </div>`;
 }
 
+/** Numbered instruction lines; empty entries are skipped and numbering closes up. */
+function numbered(lines) { return lines.filter(Boolean).map((l, i) => `${i + 1}) ${l}`).join('<br>'); }
+/** "venue on DD-MM-YYYY at HH:MM" for a duty's reporting details ('pp' polling party, 'mo', 'pc'); '' when no venue. */
+function reportAt(k) {
+  const st = T(), venue = k === 'mo' ? st.reportVenue : st[k + 'ReportVenue'], d = st[k + 'ReportDate'], t = st[k + 'ReportTime'];
+  if (!str(venue) && !d && !t) return '';
+  return `<b>${esc(venue || '—')}</b>${d ? ` on <b>${esc(fmtDate(d))}</b>` : ''}${t ? ` at <b>${esc(t)}</b>` : ''}`;
+}
+
 /* ---------- 2nd letters (booth NOT disclosed) ---------- */
 /** Tick shown before the member a printed copy belongs to (4-copy distribution sets). */
 const tick = (role, forRole) => (forRole && role === forRole ? '<span class="tick">✔</span> ' : '');
@@ -71,7 +80,7 @@ function secondPartyLetterHtml(p, forRole) {
     <div class="hdr2"><span>ELECTION URGENT</span><span>PARTY NO :- ${esc(p.partyNo)}</span></div>${copyLine(forRole)}
     ${rpaPara(`hereby appoint the following officers as a polling party for conducting the ${esc(T().electionTitle)} for <b>${esc(constName(p.const))}</b>.`)}
     <table class="lt"><tr><th>Duty</th><th>Name</th><th>PIN</th><th>Designation &amp; Office</th><th>Contact</th></tr>${rows}</table>
-    <div class="note"><b>IMPORTANT:</b><br>1) The poll will be taken on ${pollHours()}.<br>2) Polling materials are to be collected from ${matCollect()} and, after the poll, returned at <b>${esc(T().matDeposit)}</b>.<br>3) The polling station will be notified later through the Final Appointment Letter.</div>
+    <div class="note"><b>IMPORTANT:</b><br>${numbered([`The poll will be taken on ${pollHours()}.`, reportAt('pp') && `The polling party shall report at ${reportAt('pp')}.`, `Polling materials are to be collected from ${matCollect()} and, after the poll, returned at <b>${esc(T().matDeposit)}</b>.`, 'The polling station will be notified later through the Final Appointment Letter.'])}</div>
     ${sigBlock()}
   </div>`;
 }
@@ -79,8 +88,8 @@ function secondSingleLetterHtml(x, kind) {
   const o = officerByPin(x.pin) || {}, isP = kind === 'pccp';
   const duty = isP ? 'PATROLLING MAGISTRATE' : 'MICRO OBSERVER';
   const instr = isP
-    ? `1) The poll will be taken on ${pollHours()}.<br>2) Collect material from ${matCollect()} and return it at <b>${esc(T().matDeposit)}</b>.<br>3) Booth / route details will be notified later through the Final Appointment Letter.`
-    : `The poll will be taken on ${pollHours()}. Report at <b>${esc(T().reportVenue)}</b> for detailed instructions from the Observer and collection of forms. After the poll, report to the Observer at <b>${esc(T().matDeposit)}</b> personally. Booth will be notified later through the Final Appointment Letter.`;
+    ? numbered([`The poll will be taken on ${pollHours()}.`, reportAt('pc') && `Report at ${reportAt('pc')}.`, `Collect material from ${matCollect()} and return it at <b>${esc(T().matDeposit)}</b>.`, 'Booth / route details will be notified later through the Final Appointment Letter.'])
+    : numbered([`The poll will be taken on ${pollHours()}.`, reportAt('mo') && `Report at ${reportAt('mo')} for detailed instructions from the Observer and collection of forms.`, `After the poll, report to the Observer at <b>${esc(T().matDeposit)}</b> personally.`, 'Booth will be notified later through the Final Appointment Letter.']);
   return `<div class="doc">${annexHead('Order of Second Appointment Letter')}
     <div class="hdr2"><span>ELECTION URGENT</span><span>${isP ? 'PCCP' : 'ORDER'} NO :- ${esc(x.orderNo)}</span></div>
     ${rpaPara(`hereby appoint the following officer as <b>${isP ? 'Patrolling Magistrate' : 'Micro Observer'}</b> for conducting the ${esc(T().electionTitle)} for <b>${esc(constName(x.const))}</b>.`)}
@@ -107,7 +116,7 @@ function finalPartyLetterHtml(b, p, forRole) {
     <td>${tick('PRO', forRole)}<b>${esc(m('PRO').name)}</b>${desigOffice(m('PRO'))}<div class="dsub">PIN: ${esc(m('PRO').pin)} · Mob: ${esc(m('PRO').mobile)}</div></td>
     <td>${['P1', 'P2', 'P3'].map((r, i) => `<div class="po${i ? ' po-next' : ''}">${tick(r, forRole)}${i + 1}. <b>${esc(m(r).name)}</b> (${r})${desigOffice(m(r))}<div class="dsub">PIN: ${esc(m(r).pin)} · Mob: ${esc(m(r).mobile)}</div></div>`).join('')}</td>
     <td style="text-align:center;vertical-align:middle"><b>${esc(m('P1').name)}</b><br>(Polling Officer-1)${desigOffice(m('P1'))}</td></tr></table>
-    <div class="note">The poll will be taken on ${pollHours()}.<br>The Presiding Officer should collect the polling materials from ${matCollect()} and, after the poll, return them at <b>${esc(T().matDeposit)}</b>.</div>
+    <div class="note">The poll will be taken on ${pollHours()}.<br>${reportAt('pp') ? `The polling party shall report at ${reportAt('pp')}.<br>` : ''}The Presiding Officer should collect the polling materials from ${matCollect()} and, after the poll, return them at <b>${esc(T().matDeposit)}</b>.</div>
     ${sigBlock()}
   </div>`;
 }
@@ -119,7 +128,7 @@ function finalSingleLetterHtml(x, b, kind) {
     ${rpaPara(`hereby appoint the following officer as <b>${isP ? 'Patrolling Magistrate' : 'Micro Observer'}</b> for the polling station mentioned below, for <b>${esc(constName(x.const))}</b>.`)}
     <table class="lt"><tr><th style="width:55%">Employee Details</th><th>Polling station</th></tr>
     <tr><td>${officerDetails(o, false)}<br><b>Duty :- ${duty}</b></td><td><b>Booth No :</b> ${esc(boothLabel(b))}<br><b>Location :</b> ${esc(b.name)}<br><b>Block :</b> ${esc(b.block)}<br>Constituency : ${esc(b.const)}</td></tr></table>
-    <div class="note">The poll will be taken on ${pollHours()}.${isP ? ` Collect material from ${matCollect()} and return it at <b>${esc(T().matDeposit)}</b>.` : ` Report at <b>${esc(T().reportVenue)}</b> for instructions and, after the poll, report to the Observer at <b>${esc(T().matDeposit)}</b>.`}</div>
+    <div class="note">The poll will be taken on ${pollHours()}.${isP ? `${reportAt('pc') ? ` Report at ${reportAt('pc')}.` : ''} Collect material from ${matCollect()} and return it at <b>${esc(T().matDeposit)}</b>.` : `${reportAt('mo') ? ` Report at ${reportAt('mo')} for instructions.` : ''} After the poll, report to the Observer at <b>${esc(T().matDeposit)}</b>.`}</div>
     ${sigBlock()}
   </div>`;
 }

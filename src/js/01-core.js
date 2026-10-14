@@ -49,7 +49,10 @@ function defaultSetup() {
   return {
     electionTitle: '', district: '', distCode: '', roCumDeo: '', reservePct: 10,
     pollDate: '', pollFrom: '08:00', pollTo: '16:00', letterDate: '', place: '',
-    reportVenue: '', matCollectVenue: '', matCollectDate: '', matCollectTime: '', matDeposit: '',
+    ppReportVenue: '', ppReportDate: '', ppReportTime: '', // polling party reporting
+    reportVenue: '', moReportDate: '', moReportTime: '',     // Micro Observer reporting (reportVenue kept for older files)
+    pcReportVenue: '', pcReportDate: '', pcReportTime: '',   // PCCP reporting
+    matCollectVenue: '', matCollectDate: '', matCollectTime: '', matDeposit: '',
     authIssueTitle: '', authSubTitle: '', signature: '',
     ruleDistinctOffice: true, officeKeyMode: 'name',
     ruleDistinctPostingBlock: false, ruleDistinctHomeBlock: false,
