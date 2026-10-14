@@ -136,9 +136,12 @@ DocxBuilder.prototype.blocks = function (el, alignOverride) {
   }
   return out;
 };
-DocxBuilder.prototype.contentWidth = function () { return this.pg.w - 2 * this.pg.m; };
+// inside a table cell, nested tables take the cell's width (availW), otherwise the page text width
+DocxBuilder.prototype.contentWidth = function () { return this.availW || (this.pg.w - 2 * this.pg.m); };
 DocxBuilder.prototype.cellXml = function (cell, width, extra = '', align) {
+  const prevW = this.availW; this.availW = Math.max(600, width - 180);
   let inner = this.blocks(cell, align).join('');
+  this.availW = prevW;
   if (!inner.includes('<w:p>') && !inner.includes('<w:p ')) inner += '<w:p/>';
   else if (inner.endsWith('</w:tbl>')) inner += '<w:p/>';
   return `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${extra}</w:tcPr>${inner}</w:tc>`;
@@ -165,6 +168,7 @@ DocxBuilder.prototype.table = function (tbl) {
       ci += span;
       const cs = getComputedStyle(c);
       let extra = span > 1 ? `<w:gridSpan w:val="${span}"/>` : '';
+      if (!bordered && parseFloat(cs.borderLeftWidth) > 0 && cs.borderLeftStyle === 'solid') extra += '<w:tcBorders><w:left w:val="single" w:sz="6" w:space="0" w:color="000000"/></w:tcBorders>';
       const bg = cssColorHex(cs.backgroundColor); if (bg) extra += `<w:shd w:val="clear" w:color="auto" w:fill="${bg}"/>`;
       if (cs.verticalAlign === 'middle') extra += '<w:vAlign w:val="center"/>';
       else if (cs.verticalAlign === 'bottom') extra += '<w:vAlign w:val="bottom"/>';

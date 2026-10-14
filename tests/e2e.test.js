@@ -147,6 +147,13 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
     return { n: docs.length, expected: expect.length, bad: bad.slice(0, 4) };
   });
   ok(rsv.n === rsv.expected && rsv.bad.length === 0, `reserve letters in boxed layout: ${rsv.n}/${rsv.expected}; title, polling station, no photo frame, Party/Order No., name/PIN/designation/mobile (letter + receiving) ${rsv.bad.join(' | ')}`);
+  await page.evaluate(() => { __MLC.ACT.finalLetters('reserve'); document.querySelector('#printArea').innerHTML = document.querySelector('#docBody').innerHTML; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove()); });
+  await page.emulateMedia({ media: 'print' });
+  const rsvPdf = await page.pdf({ preferCSSPageSize: true });
+  await page.emulateMedia({ media: 'screen' });
+  await page.evaluate(() => { document.querySelector('#printArea').innerHTML = ''; });
+  const rsvPages = (rsvPdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+  ok(rsvPages === rsv.n, `reserve letters print one per A4 page (${rsv.n} letters → ${rsvPages} pages)`);
   const blockProof = await page.evaluate(() => { __MLC.ACT.report('blockCheck'); const t = document.querySelector('#docBody').innerText; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove()); return { bad: (t.match(/✖/g) || []).length, good: (t.match(/✔/g) || []).length }; });
   ok(blockProof.bad === 0 && blockProof.good === 12 * 6, `block exclusion proof: ${blockProof.good} ✔, ${blockProof.bad} ✖`);
   ok(errors.length === 0, 'no errors while rendering: ' + errors.join(' | '));
