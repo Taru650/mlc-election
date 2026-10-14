@@ -180,6 +180,18 @@ table.t td input,table.t td select{padding:4px 6px;font-size:.82rem}
 .doc.commplan .cp-sub{font-size:12px;margin:2px 0 3px}
 .doc.commplan table.lt{margin:0 0 4px}
 .doc.commplan table.lt td,.doc.commplan table.lt th{padding:2px 6px;font-size:12.5px}
+.doc.rsv{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif;font-size:13px;line-height:1.3}
+.doc.rsv .rsv-urgent{text-align:center;font-weight:700;font-style:italic;text-decoration:underline;font-size:13px}
+.doc.rsv .rsv-title{text-align:center;font-weight:700;font-size:13px}
+.doc.rsv .rsv-para{font-size:12.5px;margin:4px 0 8px}
+.doc.rsv table.rsv-t{table-layout:fixed}
+.doc.rsv table.rsv-t th,.doc.rsv table.rsv-t td{font-size:12.5px;padding:6px 7px;vertical-align:middle}
+.doc.rsv table.rsv-t th{background:#fff}
+.doc.rsv .rsv-mid{height:120px}
+.doc.rsv .rsv-sig{text-align:center;height:62px}
+.doc.rsv .rsv-sig .sigimg{max-height:50px}
+.doc.rsv .rsv-recv td{height:110px;vertical-align:top}
+.doc.rsv .rsv-signbox{vertical-align:bottom!important;text-align:center}
 .doc .dsub{font-size:11.5px;line-height:1.25;margin-top:1px}
 .doc .po-next{margin-top:5px;padding-top:4px;border-top:1px dotted #888}
 .doc.reg table.lt th,.doc.reg table.lt td{font-size:12px;padding:3px 5px}

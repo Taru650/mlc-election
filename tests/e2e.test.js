@@ -128,6 +128,25 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   });
   ok(docs.second === 14 && docs.finalMain === 12 && docs.finalPccp === 12, `letters rendered ${JSON.stringify(docs)}`);
   ok(docs.reserve === 2 * 4 + 2 + 2, `reserve letters = 2 parties×4 + 2 PCCP + 2 MO (got ${docs.reserve})`);
+  const rsv = await page.evaluate(() => {
+    const S = __MLC.S; __MLC.ACT.finalLetters('reserve');
+    const docs = [...document.querySelectorAll('#docBody .doc.rsv')]; const bad = [];
+    const usedP = new Set(Object.values(S.final.polling)), resP = S.second.parties.filter(p => !usedP.has(p.partyNo));
+    const expect = [];
+    resP.forEach(p => ['PRO', 'P1', 'P2', 'P3'].forEach(r => expect.push({ pin: p[r], ref: p.partyNo, label: 'Party No.' })));
+    ['pccp', 'micro'].forEach(k => { const used = new Set(Object.values(S.final[k])); S.second[k].filter(x => !used.has(x.orderNo)).forEach(x => expect.push({ pin: x.pin, ref: x.orderNo, label: 'Order No.' })); });
+    docs.forEach((d, i) => { const e = expect[i], o = S.officers.find(x => x.pin === e.pin), t = d.innerText;
+      const post = o.duty.toLowerCase().replace(/-(\d)/, ' $1');
+      if (!t.toUpperCase().includes('ORDER OF FINAL APPOINTMENT OF RESERVE ' + post.toUpperCase())) bad.push(i + ' title');
+      if (!/Polling Station\s+Details to be\s+intimated Later/i.test(t)) bad.push(i + ' ps');
+      if (!/Receiving/.test(t) || !/Signature/.test(t)) bad.push(i + ' receiving');
+      if (!t.includes(`${e.label} : ${e.ref}`)) bad.push(i + ' ref');
+      [o.name, o.pin, o.designation, o.mobile].forEach(v => { if ((t.split(v).length - 1) < 2) bad.push(`${i} ${v} not in letter + receiving`); });
+      if (d.querySelector('.rsv-photobox') || /\bPhoto\b/.test(t)) bad.push(i + ' photo frame should be absent'); });
+    document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    return { n: docs.length, expected: expect.length, bad: bad.slice(0, 4) };
+  });
+  ok(rsv.n === rsv.expected && rsv.bad.length === 0, `reserve letters in boxed layout: ${rsv.n}/${rsv.expected}; title, polling station, no photo frame, Party/Order No., name/PIN/designation/mobile (letter + receiving) ${rsv.bad.join(' | ')}`);
   const blockProof = await page.evaluate(() => { __MLC.ACT.report('blockCheck'); const t = document.querySelector('#docBody').innerText; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove()); return { bad: (t.match(/✖/g) || []).length, good: (t.match(/✔/g) || []).length }; });
   ok(blockProof.bad === 0 && blockProof.good === 12 * 6, `block exclusion proof: ${blockProof.good} ✔, ${blockProof.bad} ✖`);
   ok(errors.length === 0, 'no errors while rendering: ' + errors.join(' | '));

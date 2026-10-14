@@ -34,7 +34,9 @@ function DocxBuilder(landscape) {
 }
 DocxBuilder.prototype.runXml = function (text, cs, brk) {
   const rp = [];
+  const fam = String(cs.fontFamily || '').split(',')[0].replace(/["']/g, '').trim();
   if (/[\u2713\u2714]/.test(text)) rp.push('<w:rFonts w:ascii="Segoe UI Symbol" w:hAnsi="Segoe UI Symbol" w:cs="Segoe UI Symbol"/>');
+  else if (fam && !/times/i.test(fam)) rp.push(`<w:rFonts w:ascii="${xmlEsc(fam)}" w:hAnsi="${xmlEsc(fam)}" w:cs="${xmlEsc(fam)}"/>`);
   // element order follows the WordprocessingML schema (Word rejects out-of-order properties)
   if (Number(cs.fontWeight) >= 600 || cs.fontWeight === 'bold') rp.push('<w:b/>');
   if (cs.fontStyle === 'italic') rp.push('<w:i/>');
@@ -153,7 +155,9 @@ DocxBuilder.prototype.table = function (tbl) {
   let xml = `<w:tbl><w:tblPr><w:tblW w:w="${total}" w:type="dxa"/>${bordered ? `<w:tblBorders>${bd}</w:tblBorders>` : ''}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="90" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="90" w:type="dxa"/></w:tblCellMar></w:tblPr>`;
   xml += `<w:tblGrid>${cols.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
   rows.forEach(r => {
-    xml += `<w:tr><w:trPr><w:cantSplit/>${r.parentElement.tagName === 'THEAD' ? '<w:tblHeader/>' : ''}</w:trPr>`;
+    // boxed forms (reserve letter) keep their on-screen row heights in Word
+    const keepH = tbl.classList.contains('rsv-t') ? `<w:trHeight w:val="${Math.round(r.offsetHeight * DOCX_PX_TWIP)}" w:hRule="atLeast"/>` : '';
+    xml += `<w:tr><w:trPr><w:cantSplit/>${keepH}${r.parentElement.tagName === 'THEAD' ? '<w:tblHeader/>' : ''}</w:trPr>`;
     let ci = 0;
     Array.from(r.cells).forEach(c => {
       const span = Math.max(1, c.colSpan || 1);
@@ -163,6 +167,7 @@ DocxBuilder.prototype.table = function (tbl) {
       let extra = span > 1 ? `<w:gridSpan w:val="${span}"/>` : '';
       const bg = cssColorHex(cs.backgroundColor); if (bg) extra += `<w:shd w:val="clear" w:color="auto" w:fill="${bg}"/>`;
       if (cs.verticalAlign === 'middle') extra += '<w:vAlign w:val="center"/>';
+      else if (cs.verticalAlign === 'bottom') extra += '<w:vAlign w:val="bottom"/>';
       xml += this.cellXml(c, w, extra);
     });
     xml += '</w:tr>';

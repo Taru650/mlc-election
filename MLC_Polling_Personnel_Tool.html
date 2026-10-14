@@ -187,6 +187,18 @@ table.t td input,table.t td select{padding:4px 6px;font-size:.82rem}
 .doc.commplan .cp-sub{font-size:12px;margin:2px 0 3px}
 .doc.commplan table.lt{margin:0 0 4px}
 .doc.commplan table.lt td,.doc.commplan table.lt th{padding:2px 6px;font-size:12.5px}
+.doc.rsv{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif;font-size:13px;line-height:1.3}
+.doc.rsv .rsv-urgent{text-align:center;font-weight:700;font-style:italic;text-decoration:underline;font-size:13px}
+.doc.rsv .rsv-title{text-align:center;font-weight:700;font-size:13px}
+.doc.rsv .rsv-para{font-size:12.5px;margin:4px 0 8px}
+.doc.rsv table.rsv-t{table-layout:fixed}
+.doc.rsv table.rsv-t th,.doc.rsv table.rsv-t td{font-size:12.5px;padding:6px 7px;vertical-align:middle}
+.doc.rsv table.rsv-t th{background:#fff}
+.doc.rsv .rsv-mid{height:120px}
+.doc.rsv .rsv-sig{text-align:center;height:62px}
+.doc.rsv .rsv-sig .sigimg{max-height:50px}
+.doc.rsv .rsv-recv td{height:110px;vertical-align:top}
+.doc.rsv .rsv-signbox{vertical-align:bottom!important;text-align:center}
 .doc .dsub{font-size:11.5px;line-height:1.25;margin-top:1px}
 .doc .po-next{margin-top:5px;padding-top:4px;border-top:1px dotted #888}
 .doc.reg table.lt th,.doc.reg table.lt td{font-size:12px;padding:3px 5px}
@@ -1975,13 +1987,29 @@ function finalSingleLetterHtml(x, b, kind) {
     ${sigBlock()}
   </div>`;
 }
-function reserveLetterHtml(o, ref, cons) {
-  return `<div class="doc">${annexHead('Final Appointment Letter — Reserve')}
-    <p>In pursuance of the provisions for appointment of polling personnel, you are hereby kept in the <b>RESERVE POOL</b> for election duty. No polling station is allotted through this letter; it will be allotted later, if required, by further order.</p>
-    <table class="lt"><tr><th style="width:62%">Officer Details</th><th>Duty</th></tr>
-    <tr><td>${officerDetails(o)}</td><td style="vertical-align:middle"><b>Duty :- ${esc(o.duty)}</b><br>Reserve ref :- ${esc(ref)}<br>Constituency :- ${esc(cons)}</td></tr></table>
-    <div class="note"><b>IMPORTANT:</b><br>• You must remain available at <b>${esc(T().matCollectVenue || T().reportVenue)}</b> and follow further instructions.<br>• Verify your mobile number and report any discrepancy to the Personnel Cell.</div>
-    ${sigBlock()}
+/** "Presiding Officer", "Polling Officer 1", "Micro Observer" … from a duty label. */
+function postName(duty) { return str(duty).toLowerCase().replace(/-(\d)/, ' $1').replace(/\b[a-z]/g, c => c.toUpperCase()); }
+/** Reserve final appointment letter — boxed layout (polling-station column, photo box, name & address,
+ *  party / order no. with signature, place-date-authority row, and a Receiving section). */
+function reserveLetterHtml(o, ref, cons, refLabel = 'Party No.') {
+  const post = postName(o.duty);
+  const nameAddr = `<b>${esc(o.name)}</b> (PIN :- ${esc(o.pin)})<br>${esc(o.designation)}<br>${esc(o.office)}${o.officeCode ? ` (OFF. CODE :- ${esc(o.officeCode)})` : ''}${o.officeAddress ? `<br>${esc(o.officeAddress)}` : ''}<br>CONTACT NO. :- ${esc(o.mobile)}`;
+  return `<div class="doc rsv">
+    <div class="rsv-urgent">ELECTION URGENT</div>
+    <div class="rsv-title">ORDER OF FINAL APPOINTMENT OF RESERVE ${esc(post.toUpperCase())}</div>
+    <div class="rsv-title">${esc(T().electionTitle)}</div>
+    <p class="rsv-para">In pursuance of sub-section (1) and sub-section (3) of section 26 of the Representation of the People Act, 1951, I, ${esc(T().roCumDeo)}, hereby appoint the officer specified in column 2 of the table below as <b>Reserve ${esc(post)}</b> for <b>${esc(constName(cons))}</b> for the conduct of the ${esc(T().electionTitle)}. The polling station, if required, will be intimated later.</p>
+    <table class="lt rsv-t">
+      <colgroup><col style="width:30%"><col style="width:16%"><col style="width:54%"></colgroup>
+      <tr><th class="center">Polling Station No. &amp; Name with complete particulars of its location</th><th></th><th class="center">Name &amp; Address of Reserve</th></tr>
+      <tr><td class="center">1</td><td></td><td class="center">2</td></tr>
+      <tr class="rsv-main"><td class="center rsv-mid">Polling Station<br>Details to be<br>intimated Later</td><td></td><td>${nameAddr}</td></tr>
+      <tr><td><b>${esc(refLabel)} : ${esc(ref)}</b></td><td></td><td class="rsv-sig">${sigHtml()}</td></tr>
+      <tr><td>Place :- ${placeName()}<br>Date :- ${esc(fmtDate(T().letterDate))}</td><td class="center" colspan="1">${esc(T().authIssueTitle)}</td><td class="center">${esc(T().authSubTitle)}<br>${esc(T().district)}</td></tr>
+      <tr><th colspan="3" class="center">Receiving</th></tr>
+      <tr><td colspan="2"><b>Name &amp; Address of Reserve ${esc(post)}</b></td><td></td></tr>
+      <tr class="rsv-recv"><td colspan="2"><b>${esc(refLabel)} : ${esc(ref)}</b><br>${nameAddr}</td><td class="rsv-signbox"><i>Signature</i></td></tr>
+    </table>
   </div>`;
 }
 
@@ -2006,7 +2034,7 @@ function trainingAttendanceHtml(n, dutyFilter) {
 function regDoc(title, inner, land = true) {
   return `<div class="doc reg ${land ? 'land' : ''}"><div class="c b" style="font-size:16px">${esc(T().electionTitle)}</div><div class="c b" style="margin-bottom:8px">${esc(title)} — ${esc(T().district)}</div>${inner}<div class="small" style="margin-top:6px">Generated: ${esc(nowStamp())}</div></div>`;
 }
-function nameMob(pin) { const o = officerByPin(pin); return o ? `${esc(o.name)}<br><small>${esc(o.pin)} · ${esc(o.mobile)}</small>` : ''; }
+function nameMob(pin) { const o = officerByPin(pin); return o ? `${esc(o.name)}<br><small>${esc(o.designation)}</small><br><small>${esc(o.pin)} · ${esc(o.mobile)}</small>` : ''; }
 function tagged(kind, boothId) { if (!S.parts.final[kind]) return null; const list = kind === 'pccp' ? S.second.pccp : S.second.micro; return list.find(x => x.orderNo === S.final[kind][boothId]) || null; }
 function finalPartyOf(b) { return S.second.parties.find(p => p.partyNo === S.final.polling[b.id]) || null; }
 function reserveParties() { const used = new Set(Object.values(S.final.polling)); return S.second.parties.filter(p => !used.has(p.partyNo)); }
@@ -2078,7 +2106,7 @@ ACT.finalLetters = kind => {
   }
   const parts = [];
   if (S.parts.final.polling) reserveParties().forEach(p => PARTY_ROLES.forEach(r => { const o = officerByPin(p[r]); if (o) parts.push(reserveLetterHtml(o, p.partyNo, p.const)); }));
-  ['pccp', 'micro'].filter(k => S.parts.final[k]).forEach(k => reserveSingles(k).forEach(x => { const o = officerByPin(x.pin); if (o) parts.push(reserveLetterHtml(o, x.orderNo, x.const)); }));
+  ['pccp', 'micro'].filter(k => S.parts.final[k]).forEach(k => reserveSingles(k).forEach(x => { const o = officerByPin(x.pin); if (o) parts.push(reserveLetterHtml(o, x.orderNo, x.const, 'Order No.')); }));
   openDoc(`Final Appointment Letters — Reserve (${parts.length})`, parts.join(''));
 };
 
@@ -2800,7 +2828,9 @@ function DocxBuilder(landscape) {
 }
 DocxBuilder.prototype.runXml = function (text, cs, brk) {
   const rp = [];
+  const fam = String(cs.fontFamily || '').split(',')[0].replace(/["']/g, '').trim();
   if (/[\u2713\u2714]/.test(text)) rp.push('<w:rFonts w:ascii="Segoe UI Symbol" w:hAnsi="Segoe UI Symbol" w:cs="Segoe UI Symbol"/>');
+  else if (fam && !/times/i.test(fam)) rp.push(`<w:rFonts w:ascii="${xmlEsc(fam)}" w:hAnsi="${xmlEsc(fam)}" w:cs="${xmlEsc(fam)}"/>`);
   // element order follows the WordprocessingML schema (Word rejects out-of-order properties)
   if (Number(cs.fontWeight) >= 600 || cs.fontWeight === 'bold') rp.push('<w:b/>');
   if (cs.fontStyle === 'italic') rp.push('<w:i/>');
@@ -2919,7 +2949,9 @@ DocxBuilder.prototype.table = function (tbl) {
   let xml = `<w:tbl><w:tblPr><w:tblW w:w="${total}" w:type="dxa"/>${bordered ? `<w:tblBorders>${bd}</w:tblBorders>` : ''}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="90" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="90" w:type="dxa"/></w:tblCellMar></w:tblPr>`;
   xml += `<w:tblGrid>${cols.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
   rows.forEach(r => {
-    xml += `<w:tr><w:trPr><w:cantSplit/>${r.parentElement.tagName === 'THEAD' ? '<w:tblHeader/>' : ''}</w:trPr>`;
+    // boxed forms (reserve letter) keep their on-screen row heights in Word
+    const keepH = tbl.classList.contains('rsv-t') ? `<w:trHeight w:val="${Math.round(r.offsetHeight * DOCX_PX_TWIP)}" w:hRule="atLeast"/>` : '';
+    xml += `<w:tr><w:trPr><w:cantSplit/>${keepH}${r.parentElement.tagName === 'THEAD' ? '<w:tblHeader/>' : ''}</w:trPr>`;
     let ci = 0;
     Array.from(r.cells).forEach(c => {
       const span = Math.max(1, c.colSpan || 1);
@@ -2929,6 +2961,7 @@ DocxBuilder.prototype.table = function (tbl) {
       let extra = span > 1 ? `<w:gridSpan w:val="${span}"/>` : '';
       const bg = cssColorHex(cs.backgroundColor); if (bg) extra += `<w:shd w:val="clear" w:color="auto" w:fill="${bg}"/>`;
       if (cs.verticalAlign === 'middle') extra += '<w:vAlign w:val="center"/>';
+      else if (cs.verticalAlign === 'bottom') extra += '<w:vAlign w:val="bottom"/>';
       xml += this.cellXml(c, w, extra);
     });
     xml += '</w:tr>';

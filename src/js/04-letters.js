@@ -123,13 +123,29 @@ function finalSingleLetterHtml(x, b, kind) {
     ${sigBlock()}
   </div>`;
 }
-function reserveLetterHtml(o, ref, cons) {
-  return `<div class="doc">${annexHead('Final Appointment Letter — Reserve')}
-    <p>In pursuance of the provisions for appointment of polling personnel, you are hereby kept in the <b>RESERVE POOL</b> for election duty. No polling station is allotted through this letter; it will be allotted later, if required, by further order.</p>
-    <table class="lt"><tr><th style="width:62%">Officer Details</th><th>Duty</th></tr>
-    <tr><td>${officerDetails(o)}</td><td style="vertical-align:middle"><b>Duty :- ${esc(o.duty)}</b><br>Reserve ref :- ${esc(ref)}<br>Constituency :- ${esc(cons)}</td></tr></table>
-    <div class="note"><b>IMPORTANT:</b><br>• You must remain available at <b>${esc(T().matCollectVenue || T().reportVenue)}</b> and follow further instructions.<br>• Verify your mobile number and report any discrepancy to the Personnel Cell.</div>
-    ${sigBlock()}
+/** "Presiding Officer", "Polling Officer 1", "Micro Observer" … from a duty label. */
+function postName(duty) { return str(duty).toLowerCase().replace(/-(\d)/, ' $1').replace(/\b[a-z]/g, c => c.toUpperCase()); }
+/** Reserve final appointment letter — boxed layout (polling-station column, photo box, name & address,
+ *  party / order no. with signature, place-date-authority row, and a Receiving section). */
+function reserveLetterHtml(o, ref, cons, refLabel = 'Party No.') {
+  const post = postName(o.duty);
+  const nameAddr = `<b>${esc(o.name)}</b> (PIN :- ${esc(o.pin)})<br>${esc(o.designation)}<br>${esc(o.office)}${o.officeCode ? ` (OFF. CODE :- ${esc(o.officeCode)})` : ''}${o.officeAddress ? `<br>${esc(o.officeAddress)}` : ''}<br>CONTACT NO. :- ${esc(o.mobile)}`;
+  return `<div class="doc rsv">
+    <div class="rsv-urgent">ELECTION URGENT</div>
+    <div class="rsv-title">ORDER OF FINAL APPOINTMENT OF RESERVE ${esc(post.toUpperCase())}</div>
+    <div class="rsv-title">${esc(T().electionTitle)}</div>
+    <p class="rsv-para">In pursuance of sub-section (1) and sub-section (3) of section 26 of the Representation of the People Act, 1951, I, ${esc(T().roCumDeo)}, hereby appoint the officer specified in column 2 of the table below as <b>Reserve ${esc(post)}</b> for <b>${esc(constName(cons))}</b> for the conduct of the ${esc(T().electionTitle)}. The polling station, if required, will be intimated later.</p>
+    <table class="lt rsv-t">
+      <colgroup><col style="width:30%"><col style="width:16%"><col style="width:54%"></colgroup>
+      <tr><th class="center">Polling Station No. &amp; Name with complete particulars of its location</th><th></th><th class="center">Name &amp; Address of Reserve</th></tr>
+      <tr><td class="center">1</td><td></td><td class="center">2</td></tr>
+      <tr class="rsv-main"><td class="center rsv-mid">Polling Station<br>Details to be<br>intimated Later</td><td></td><td>${nameAddr}</td></tr>
+      <tr><td><b>${esc(refLabel)} : ${esc(ref)}</b></td><td></td><td class="rsv-sig">${sigHtml()}</td></tr>
+      <tr><td>Place :- ${placeName()}<br>Date :- ${esc(fmtDate(T().letterDate))}</td><td class="center" colspan="1">${esc(T().authIssueTitle)}</td><td class="center">${esc(T().authSubTitle)}<br>${esc(T().district)}</td></tr>
+      <tr><th colspan="3" class="center">Receiving</th></tr>
+      <tr><td colspan="2"><b>Name &amp; Address of Reserve ${esc(post)}</b></td><td></td></tr>
+      <tr class="rsv-recv"><td colspan="2"><b>${esc(refLabel)} : ${esc(ref)}</b><br>${nameAddr}</td><td class="rsv-signbox"><i>Signature</i></td></tr>
+    </table>
   </div>`;
 }
 
@@ -154,7 +170,7 @@ function trainingAttendanceHtml(n, dutyFilter) {
 function regDoc(title, inner, land = true) {
   return `<div class="doc reg ${land ? 'land' : ''}"><div class="c b" style="font-size:16px">${esc(T().electionTitle)}</div><div class="c b" style="margin-bottom:8px">${esc(title)} — ${esc(T().district)}</div>${inner}<div class="small" style="margin-top:6px">Generated: ${esc(nowStamp())}</div></div>`;
 }
-function nameMob(pin) { const o = officerByPin(pin); return o ? `${esc(o.name)}<br><small>${esc(o.pin)} · ${esc(o.mobile)}</small>` : ''; }
+function nameMob(pin) { const o = officerByPin(pin); return o ? `${esc(o.name)}<br><small>${esc(o.designation)}</small><br><small>${esc(o.pin)} · ${esc(o.mobile)}</small>` : ''; }
 function tagged(kind, boothId) { if (!S.parts.final[kind]) return null; const list = kind === 'pccp' ? S.second.pccp : S.second.micro; return list.find(x => x.orderNo === S.final[kind][boothId]) || null; }
 function finalPartyOf(b) { return S.second.parties.find(p => p.partyNo === S.final.polling[b.id]) || null; }
 function reserveParties() { const used = new Set(Object.values(S.final.polling)); return S.second.parties.filter(p => !used.has(p.partyNo)); }
@@ -226,7 +242,7 @@ ACT.finalLetters = kind => {
   }
   const parts = [];
   if (S.parts.final.polling) reserveParties().forEach(p => PARTY_ROLES.forEach(r => { const o = officerByPin(p[r]); if (o) parts.push(reserveLetterHtml(o, p.partyNo, p.const)); }));
-  ['pccp', 'micro'].filter(k => S.parts.final[k]).forEach(k => reserveSingles(k).forEach(x => { const o = officerByPin(x.pin); if (o) parts.push(reserveLetterHtml(o, x.orderNo, x.const)); }));
+  ['pccp', 'micro'].filter(k => S.parts.final[k]).forEach(k => reserveSingles(k).forEach(x => { const o = officerByPin(x.pin); if (o) parts.push(reserveLetterHtml(o, x.orderNo, x.const, 'Order No.')); }));
   openDoc(`Final Appointment Letters — Reserve (${parts.length})`, parts.join(''));
 };
 
