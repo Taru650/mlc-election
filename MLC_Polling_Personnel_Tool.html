@@ -205,6 +205,15 @@ table.t td input,table.t td select{padding:4px 6px;font-size:.82rem}
 .doc.rsv table.rsv-inner td+td{border-left:1px solid #000}
 .doc.rsv .rsv-recv td{height:200px;vertical-align:top}
 .doc.rsv .rsv-signbox{vertical-align:bottom!important;text-align:center}
+.doc.att .cp-booth{break-inside:avoid;page-break-inside:avoid;margin:0 0 12px}
+.doc.att .cp-booth.long{break-inside:auto;page-break-inside:auto}
+.doc.att .cp-head{font-weight:700;font-size:14px;border-bottom:1px solid #000;margin-top:6px}
+.doc.att .cp-sub{font-size:12px;margin:2px 0 3px}
+.doc.att table.lt{margin:0 0 4px}
+.doc.att table.lt{table-layout:fixed}
+.doc.att table.lt td,.doc.att table.lt th{padding:3px 4px;font-size:11.5px}
+.doc.att table.lt td:last-child{height:26px}
+.doc.att thead{display:table-header-group}
 .doc .dsub{font-size:11.5px;line-height:1.25;margin-top:1px}
 .doc .po-next{margin-top:5px;padding-top:4px;border-top:1px dotted #888}
 .doc.reg table.lt th,.doc.reg table.lt td{font-size:12px;padding:3px 5px}
@@ -2101,6 +2110,8 @@ VIEWS.reports = () => {
       ${card('Power vesting list', 'Party-wise Presiding Officer and Polling Officer-1 — PIN, name, designation, office, mobile — for approval of magisterial powers.', b('report', 'powerVesting', 'Open', sp.polling) + b('exportPowerVesting', '', 'Excel', sp.polling))}
       ${card('2nd letters — PCCP', 'Booth not disclosed.', b('previewSecond', 'pccp', 'Open', sp.pccp && S.second.pccp.length))}
       ${card('2nd letters — Micro Observers', 'Booth not disclosed.', b('previewSecond', 'micro', 'Open', sp.micro && S.second.micro.length))}
+      ${card('Attendance after 2nd randomisation', 'Only officers selected in the 2nd randomisation, with signature column.', b('attendance', 'pp2party', 'Polling — party-wise', sp.polling) + b('attendanceExcel', 'pp2party', 'Excel', sp.polling) + b('attendance', 'pp2duty', 'Polling — duty-wise', sp.polling) + b('attendanceExcel', 'pp2duty', 'Excel', sp.polling) + b('attendance', 'mo2', 'Micro Observers', sp.micro) + b('attendanceExcel', 'mo2', 'Excel', sp.micro))}
+      ${card('Attendance after final randomisation', 'Party-wise: main parties (with booth) and reserve parties separately.', b('attendance', 'ppMain', 'Main parties', fp.polling) + b('attendanceExcel', 'ppMain', 'Excel', fp.polling) + b('attendance', 'ppReserve', 'Reserve parties', fp.polling) + b('attendanceExcel', 'ppReserve', 'Excel', fp.polling))}
       ${card('Communication plan', 'After final booth tagging: for every booth — booth no. & full name, then PrO, P1, P2, P3 and Micro Observer with PIN, name, designation and mobile.', b('report', 'commPlan', 'Open (PDF / Word)', fp.polling) + b('exportCommPlan', '', 'Excel', fp.polling))}
       ${card('Final letters — main parties', 'Booth disclosed. Office copy (1 per booth) or distribution set (4 per booth, ✔ before PrO / P1 / P2 / P3).', b('finalLetters', 'polling', 'Office copy', fp.polling) + b('finalLetters', 'polling4', '4 copies ✔', fp.polling))}
       ${card('Final letters — PCCP / MO', 'Booth disclosed.', b('finalLetters', 'pccp', 'PCCP', fp.pccp && S.second.pccp.length) + b('finalLetters', 'micro', 'Micro Obs.', fp.micro && S.second.micro.length))}
@@ -2310,6 +2321,76 @@ REPORTS.exempted = ['Exemption register (exempted officers & reasons)', () => {
     </table>
     <div class="sigs" style="margin-top:30px"><div></div><div></div><div>${sigHtml()}<b>${esc(S.setup.authSubTitle)}</b><br>${esc(S.setup.district)}</div></div>`);
 }];
+
+/* ---- 04c-attendance.js ---- */
+/* =====================================================================
+ * Attendance sheets of SELECTED personnel only
+ *  After 2nd randomisation : polling parties (party-wise, duty-wise),
+ *                            Micro Observers (order-wise)
+ *  After final randomisation: main parties, reserve parties (party-wise)
+ * Each: printable (PDF / Word) and Excel.
+ * ===================================================================== */
+const byPartyNo = (a, b) => a.partyNo.localeCompare(b.partyNo, undefined, { numeric: true });
+const byOrderNo = (a, b) => a.orderNo.localeCompare(b.orderNo, undefined, { numeric: true });
+
+/** Returns { title, groups: [{ head, sub, rows: [{ ref, post, o }] }], refCol, needs } for an attendance kind. */
+function attendanceData(kind) {
+  const party = p => PARTY_ROLES.map(r => ({ ref: p.partyNo, post: DUTY_BY_KEY[r].label, o: officerByPin(p[r]) || {} }));
+  const boothOfParty = pno => { const bid = Object.keys(S.final.polling).find(k => S.final.polling[k] === pno); return bid ? boothById(bid) : null; };
+  if (kind === 'pp2party') return {
+    title: 'ATTENDANCE — POLLING PARTIES (after 2nd randomisation) — PARTY-WISE', needs: S.parts.second.polling ? '' : 'Lock Polling parties in the 2nd randomisation first.',
+    groups: S.second.parties.slice().sort(byPartyNo).map(p => ({ head: `Party No. ${p.partyNo}`, sub: `Constituency: ${constName(p.const)}`, rows: party(p) })),
+  };
+  if (kind === 'pp2duty') return {
+    title: 'ATTENDANCE — POLLING PARTIES (after 2nd randomisation) — DUTY-WISE', needs: S.parts.second.polling ? '' : 'Lock Polling parties in the 2nd randomisation first.', refCol: 'Party No.',
+    groups: PARTY_ROLES.map(r => ({ head: DUTY_BY_KEY[r].label, sub: `${S.second.parties.length} officers`, rows: S.second.parties.slice().sort(byPartyNo).map(p => ({ ref: p.partyNo, post: DUTY_BY_KEY[r].label, o: officerByPin(p[r]) || {} })) })),
+  };
+  if (kind === 'mo2') return {
+    title: 'ATTENDANCE — MICRO OBSERVERS (after 2nd randomisation)', needs: S.parts.second.micro ? '' : 'Lock Micro Observers in the 2nd randomisation first.', refCol: 'Order No.',
+    groups: S.constituencies.filter(c => S.second.micro.some(x => x.const === c.code)).map(c => {
+      const list = S.second.micro.filter(x => x.const === c.code).sort(byOrderNo);
+      return { head: `MICRO OBSERVER — ${constName(c.code)}`, sub: `${list.length} officers`, rows: list.map(x => ({ ref: x.orderNo, post: 'MICRO OBSERVER', o: officerByPin(x.pin) || {} })) };
+    }),
+  };
+  if (kind === 'ppMain' || kind === 'ppReserve') {
+    const used = new Set(Object.values(S.final.polling));
+    const list = S.second.parties.filter(p => (kind === 'ppMain') === used.has(p.partyNo)).sort(byPartyNo);
+    return {
+      title: `ATTENDANCE — ${kind === 'ppMain' ? 'MAIN' : 'RESERVE'} POLLING PARTIES (after final randomisation) — PARTY-WISE`,
+      needs: S.parts.final.polling ? '' : 'Lock Polling parties in the final randomisation first.',
+      groups: list.map(p => { const b = boothOfParty(p.partyNo); return { head: `Party No. ${p.partyNo}`, sub: b ? `Booth No. ${boothLabel(b)} — ${b.name} · Block: ${b.block} · ${constName(b.const)}` : `RESERVE · ${constName(p.const)}`, rows: party(p) }; }),
+    };
+  }
+  return null;
+}
+const ATTENDANCE_KINDS = {
+  pp2party: 'Polling parties — party-wise (2nd)', pp2duty: 'Polling parties — duty-wise (2nd)', mo2: 'Micro Observers (2nd)',
+  ppMain: 'Main parties — party-wise (final)', ppReserve: 'Reserve parties — party-wise (final)',
+};
+function attendanceHtml(kind) {
+  const d = attendanceData(kind);
+  if (d.needs) return `<div class="alert info">${esc(d.needs)}</div>`;
+  const n = d.groups.reduce((a, g) => a + g.rows.length, 0);
+  return `<div class="doc att"><div class="c b" style="font-size:15px">${esc(T().electionTitle)}</div><div class="c b" style="margin-bottom:8px">${esc(d.title)} — ${esc(T().district)}</div>
+    ${d.groups.map(g => `<div class="cp-booth${g.rows.length > 12 ? ' long' : ''}"><div class="cp-head">${esc(g.head)}</div>${g.sub ? `<div class="cp-sub">${esc(g.sub)}</div>` : ''}
+      <table class="lt"><thead><tr><th style="width:4%">Sl</th><th style="width:${d.refCol ? 12 : 18}%">${d.refCol ? esc(d.refCol) : 'Post'}</th><th style="width:8%">PIN</th><th style="width:16%">Name</th><th style="width:14%">Designation</th><th style="width:${d.refCol ? 19 : 13}%">Office</th><th style="width:11%">Mobile</th><th>Signature</th></tr></thead><tbody>
+      ${g.rows.map((r, i) => `<tr><td>${i + 1}</td><td class="nowrap">${esc(d.refCol ? r.ref : r.post)}</td><td><b>${esc(r.o.pin)}</b></td><td>${esc(r.o.name)}</td><td>${esc(r.o.designation)}</td><td>${esc(r.o.office)}</td><td class="nowrap">${esc(r.o.mobile)}</td><td></td></tr>`).join('')}
+      </tbody></table></div>`).join('')}
+    <div class="small" style="margin-top:6px">Total: <b>${n}</b> · Generated: ${esc(nowStamp())}</div></div>`;
+}
+/** Flat rows for Excel (and tests). */
+function attendanceRows(kind) {
+  const d = attendanceData(kind); if (d.needs) return [];
+  return d.groups.flatMap(g => g.rows.map((r, i) => [g.head, g.sub || '', i + 1, r.ref, r.post, r.o.pin, r.o.name, r.o.designation, r.o.office, r.o.mobile, '']));
+}
+const ATTENDANCE_HEAD = ['Group', 'Details', 'Sl', 'Party / Order No', 'Post', 'PIN', 'Name', 'Designation', 'Office', 'Mobile', 'Signature'];
+ACT.attendance = kind => openDoc(`Attendance — ${ATTENDANCE_KINDS[kind]}`, attendanceHtml(kind));
+ACT.attendanceExcel = kind => {
+  const d = attendanceData(kind); if (d.needs) return toast(d.needs, 'bad');
+  const wb = XLSX.utils.book_new();
+  addSheet(wb, 'Attendance', ATTENDANCE_HEAD, attendanceRows(kind), [26, 44, 5, 15, 22, 11, 26, 26, 32, 13, 18]);
+  saveWb(wb, `Attendance_${safeName(ATTENDANCE_KINDS[kind])}_${safeName(S.setup.district)}.xlsx`);
+};
 
 /* ---- 05-excel.js ---- */
 /* =====================================================================
@@ -2991,6 +3072,7 @@ DocxBuilder.prototype.table = function (tbl) {
       let extra = span > 1 ? `<w:gridSpan w:val="${span}"/>` : '';
       if (!bordered && parseFloat(cs.borderLeftWidth) > 0 && cs.borderLeftStyle === 'solid') extra += '<w:tcBorders><w:left w:val="single" w:sz="6" w:space="0" w:color="000000"/></w:tcBorders>';
       const bg = cssColorHex(cs.backgroundColor); if (bg) extra += `<w:shd w:val="clear" w:color="auto" w:fill="${bg}"/>`;
+      if (cs.whiteSpace === 'nowrap') extra += '<w:noWrap/>';
       if (cs.verticalAlign === 'middle') extra += '<w:vAlign w:val="center"/>';
       else if (cs.verticalAlign === 'bottom') extra += '<w:vAlign w:val="bottom"/>';
       xml += this.cellXml(c, w, extra);

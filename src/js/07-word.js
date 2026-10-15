@@ -170,6 +170,7 @@ DocxBuilder.prototype.table = function (tbl) {
       let extra = span > 1 ? `<w:gridSpan w:val="${span}"/>` : '';
       if (!bordered && parseFloat(cs.borderLeftWidth) > 0 && cs.borderLeftStyle === 'solid') extra += '<w:tcBorders><w:left w:val="single" w:sz="6" w:space="0" w:color="000000"/></w:tcBorders>';
       const bg = cssColorHex(cs.backgroundColor); if (bg) extra += `<w:shd w:val="clear" w:color="auto" w:fill="${bg}"/>`;
+      if (cs.whiteSpace === 'nowrap') extra += '<w:noWrap/>';
       if (cs.verticalAlign === 'middle') extra += '<w:vAlign w:val="center"/>';
       else if (cs.verticalAlign === 'bottom') extra += '<w:vAlign w:val="bottom"/>';
       xml += this.cellXml(c, w, extra);

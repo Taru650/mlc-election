@@ -101,6 +101,19 @@ time** separately for the **Polling Party**, **Micro Observer** and **PCCP**. Th
 respective 2nd and final appointment letters (a blank group is simply left out of the letter),
 and are saved in the project / configuration Excel.
 
+## Attendance sheets of selected personnel
+
+Only officers actually selected appear (exempted / unselected officers never do):
+
+| When | Sheet | Grouping |
+|---|---|---|
+| after 2nd randomisation | Polling parties | party-wise and duty-wise |
+| after 2nd randomisation | Micro Observers | order-wise, per constituency |
+| after final randomisation | Main parties (with booth) | party-wise |
+| after final randomisation | Reserve parties | party-wise |
+
+Each opens for print / PDF / Word (a party never splits across pages) and exports to Excel.
+
 ## Communication plan
 
 After the polling-party final tagging is locked, *Communication plan* gives one block per

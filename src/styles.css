@@ -198,6 +198,15 @@ table.t td input,table.t td select{padding:4px 6px;font-size:.82rem}
 .doc.rsv table.rsv-inner td+td{border-left:1px solid #000}
 .doc.rsv .rsv-recv td{height:200px;vertical-align:top}
 .doc.rsv .rsv-signbox{vertical-align:bottom!important;text-align:center}
+.doc.att .cp-booth{break-inside:avoid;page-break-inside:avoid;margin:0 0 12px}
+.doc.att .cp-booth.long{break-inside:auto;page-break-inside:auto}
+.doc.att .cp-head{font-weight:700;font-size:14px;border-bottom:1px solid #000;margin-top:6px}
+.doc.att .cp-sub{font-size:12px;margin:2px 0 3px}
+.doc.att table.lt{margin:0 0 4px}
+.doc.att table.lt{table-layout:fixed}
+.doc.att table.lt td,.doc.att table.lt th{padding:3px 4px;font-size:11.5px}
+.doc.att table.lt td:last-child{height:26px}
+.doc.att thead{display:table-header-group}
 .doc .dsub{font-size:11.5px;line-height:1.25;margin-top:1px}
 .doc .po-next{margin-top:5px;padding-top:4px;border-top:1px dotted #888}
 .doc.reg table.lt th,.doc.reg table.lt td{font-size:12px;padding:3px 5px}

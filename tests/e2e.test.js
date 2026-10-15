@@ -297,6 +297,54 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   ok(repd.uiField && repd.bound === true, 'Setup screen has the 9 reporting fields and typing in them saves into the data');
   ok(repd.excel, 'reporting details survive project Excel save & open');
 
+  console.log('3f. Attendance sheets of selected personnel only (2nd: party-wise, duty-wise, MO; final: main, reserve)');
+  const att = await page.evaluate(() => {
+    const S = __MLC.S, roles = ['PRO', 'P1', 'P2', 'P3'], bad = [];
+    const sortP = (a, b) => a.partyNo.localeCompare(b.partyNo, undefined, { numeric: true });
+    const blocksOf = kind => { __MLC.ACT.attendance(kind); const bl = [...document.querySelectorAll('#docBody .cp-booth')].map(b => ({ head: b.querySelector('.cp-head').innerText, sub: (b.querySelector('.cp-sub') || {}).innerText || '', pins: [...b.querySelectorAll('tbody tr')].map(tr => tr.cells[2].innerText.trim()) })); document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove()); return bl; };
+    const excelPins = kind => attendanceRows(kind).map(r => String(r[5]));
+    const used = new Set(Object.values(S.final.polling));
+    const parties = S.second.parties.slice().sort(sortP);
+    // party-wise (2nd)
+    const pw = blocksOf('pp2party');
+    if (pw.length !== parties.length) bad.push('pp2party groups');
+    pw.forEach((b, i) => { const p = parties[i]; if (!b.head.includes(p.partyNo) || JSON.stringify(b.pins) !== JSON.stringify(roles.map(r => p[r]))) bad.push('pp2party ' + p.partyNo); });
+    // duty-wise (2nd)
+    const dw = blocksOf('pp2duty');
+    if (dw.length !== 4) bad.push('pp2duty groups');
+    dw.forEach((b, k) => { if (JSON.stringify(b.pins) !== JSON.stringify(parties.map(p => p[roles[k]]))) bad.push('pp2duty ' + roles[k]); });
+    // MO (2nd)
+    const mo = blocksOf('mo2').flatMap(b => b.pins).sort();
+    if (JSON.stringify(mo) !== JSON.stringify(S.second.micro.map(x => x.pin).sort())) bad.push('mo2 set');
+    // final main / reserve
+    const main = blocksOf('ppMain'), res = blocksOf('ppReserve');
+    const mainP = parties.filter(p => used.has(p.partyNo)), resP = parties.filter(p => !used.has(p.partyNo));
+    if (main.length !== mainP.length || res.length !== resP.length) bad.push('main/reserve counts');
+    main.forEach((b, i) => { const p = mainP[i], bid = Object.keys(S.final.polling).find(k => S.final.polling[k] === p.partyNo), bo = S.booths.find(x => x.id === bid);
+      if (!b.head.includes(p.partyNo) || !b.sub.includes('Booth No. ' + bo.no) || JSON.stringify(b.pins) !== JSON.stringify(roles.map(r => p[r]))) bad.push('main ' + p.partyNo); });
+    res.forEach((b, i) => { const p = resP[i]; if (!b.head.includes(p.partyNo) || !/RESERVE/.test(b.sub) || JSON.stringify(b.pins) !== JSON.stringify(roles.map(r => p[r]))) bad.push('reserve ' + p.partyNo); });
+    const mainPins = new Set(main.flatMap(b => b.pins)), resPins = res.flatMap(b => b.pins);
+    if (resPins.some(x => mainPins.has(x))) bad.push('main/reserve overlap');
+    if (mainPins.size + resPins.length !== parties.length * 4) bad.push('main+reserve != all');
+    // only selected officers anywhere; Excel identical to printed
+    const selected = new Set(); S.second.parties.forEach(p => roles.forEach(r => selected.add(p[r]))); S.second.micro.forEach(x => selected.add(x.pin));
+    ['pp2party', 'pp2duty', 'mo2', 'ppMain', 'ppReserve'].forEach(k => {
+      const printed = blocksOf(k).flatMap(b => b.pins), xl = excelPins(k);
+      if (printed.some(x => !selected.has(x))) bad.push(k + ': unselected officer listed');
+      if (JSON.stringify(printed) !== JSON.stringify(xl)) bad.push(k + ': Excel differs from print');
+    });
+    const unselected = S.officers.filter(o => !selected.has(o.pin)).length;
+    return { bad: bad.slice(0, 5), n: bad.length, parties: parties.length, main: mainP.length, reserve: resP.length, mo: mo.length, unselected };
+  });
+  ok(att.n === 0, `attendance: ${att.parties} parties party-wise & duty-wise, ${att.mo} MOs, ${att.main} main + ${att.reserve} reserve; exactly the selected officers, ${att.unselected} unselected excluded; Excel = print ${att.bad.join(' | ')}`);
+  const attGate = await page.evaluate(() => { const S = __MLC.S; const keep = JSON.parse(JSON.stringify(S.parts)); S.parts.second.polling = false; S.parts.second.micro = false; S.parts.final.polling = false;
+    const r = ['pp2party', 'pp2duty', 'mo2', 'ppMain', 'ppReserve'].every(k => attendanceRows(k).length === 0 && /first/.test(attendanceHtml(k))); S.parts = keep; return r; });
+  ok(attGate, 'attendance sheets are refused until the matching part is locked');
+  for (const k of ['pp2party', 'ppMain']) {
+    const dlx = page.waitForEvent('download'); await page.evaluate(k => __MLC.ACT.attendanceExcel(k), k); const f = await dlx;
+    ok(/^Attendance_.*\.xlsx$/.test(f.suggestedFilename()), 'Excel download: ' + f.suggestedFilename());
+  }
+
   console.log('3b. Final party letter shows designation & office and prints one letter per A4 page');
   const fl = await page.evaluate(() => { __MLC.ACT.finalLetters('polling'); const h = document.querySelector('#docBody').innerHTML; document.querySelector('#printArea').innerHTML = h; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
     const S = __MLC.S, p = S.second.parties.find(x => x.partyNo === S.final.polling[S.booths[0].id]);
