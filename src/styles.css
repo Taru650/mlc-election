@@ -207,6 +207,34 @@ table.t td input,table.t td select{padding:4px 6px;font-size:.82rem}
 .doc.att table.lt td,.doc.att table.lt th{padding:3px 4px;font-size:11.5px}
 .doc.att table.lt td:last-child{height:26px}
 .doc.att thead{display:table-header-group}
+/* identity cards: 2 x 4 per A4 page, fixed card size; long text shrinks to fit (fitIcards) */
+.doc.icp{padding:6mm 6mm}
+.doc.icp table.icgrid{width:100%;border-collapse:separate;border-spacing:3mm 2mm;table-layout:fixed;margin:0}
+.doc.icp table.icgrid>tbody>tr>td{padding:0;vertical-align:top;border:0}
+.doc table.icard{width:100%;border-collapse:collapse;table-layout:fixed;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif;font-size:8.5pt;line-height:1.18;color:#000}
+.doc table.icard td{border:0;padding:1mm 1.6mm;vertical-align:top}
+.doc table.icard tr>td:first-child{border-left:1.3px solid #000}
+.doc table.icard tr>td:last-child{border-right:1.3px solid #000}
+.doc table.icard tr:first-child>td{border-top:1.3px solid #000}
+.doc table.icard tr:last-child>td{border-bottom:1.3px solid #000}
+.doc table.icard tr.ic-top>td,.doc table.icard tr.ic-mid>td,.doc table.icard tr.ic-body>td{border-bottom:1px solid #000}
+.doc table.icard .ic-qr{vertical-align:middle;text-align:center}
+.doc table.icard .ic-qrimg{width:16.5mm;height:16.5mm;image-rendering:pixelated;display:block;margin:0 auto}
+.doc table.icard .ic-head{text-align:center;vertical-align:middle}
+.doc table.icard .ic-headbox{height:18mm;overflow:hidden;font-size:9pt;display:flex;flex-direction:column;justify-content:center}
+.doc table.icard .ic-title{font-weight:700;font-size:1em;line-height:1.12}
+.doc table.icard .ic-duty{font-weight:700;font-size:1em;margin-top:.5mm}
+.doc table.icard .ic-valid{font-weight:700;font-size:.83em}
+.doc table.icard .ic-code,.doc table.icard .ic-mob{font-size:8.5pt;vertical-align:middle;white-space:nowrap;overflow:hidden}
+.doc table.icard .ic-code{font-weight:700}
+.doc table.icard .ic-detbox{height:21mm;overflow:hidden;font-size:8.5pt}
+.doc table.icard .ic-photobox{width:16mm;height:20mm;border:1px solid #999;margin:0 auto}
+.doc table.icard .ic-party{font-weight:700}
+.doc table.icard .ic-addr{font-size:.88em}
+.doc table.icard tr.ic-sig>td{height:10.5mm;vertical-align:bottom}
+.doc table.icard .ic-sigwrap{text-align:right;padding-right:4mm}
+.doc table.icard .ic-sigimg{max-height:8mm;max-width:32mm;display:inline-block}
+.doc table.icard .ic-siglbl{font-weight:700;font-size:9pt}
 .doc .dsub{font-size:11.5px;line-height:1.25;margin-top:1px}
 .doc .po-next{margin-top:5px;padding-top:4px;border-top:1px dotted #888}
 .doc.reg table.lt th,.doc.reg table.lt td{font-size:12px;padding:3px 5px}

@@ -297,7 +297,7 @@ ACT.editOfficer = idx => {
       <label class="f">Duty *<select name="duty"><option value="">— select —</option>${DUTIES.map(d => `<option ${o.duty === d.label ? 'selected' : ''}>${esc(d.label)}</option>`).join('')}</select></label>
       ${f('homeBlockCode', 'Home block code')}${f('homeBlock', 'Home block *', 'text', 'list="dlBlocks"')}
       ${f('postingBlockCode', 'Posting block code')}${f('postingBlock', 'Posting block *', 'text', 'list="dlBlocks"')}
-      ${f('acNo', 'Account no')}${f('bank', 'Bank')}${f('branch', 'Branch')}${f('ifsc', 'IFSC')}
+      ${f('bloodGroup', 'Blood group (optional)')}${f('acNo', 'Account no')}${f('bank', 'Bank')}${f('branch', 'Branch')}${f('ifsc', 'IFSC')}
       <datalist id="dlBlocks">${blocks.map(b => `<option value="${esc(b)}">`).join('')}</datalist></form>`,
     foot: `<button class="btn" data-close>Cancel</button><button class="btn ok" data-act="saveOfficer" data-arg="${i}">Save</button>`,
   });

@@ -15,13 +15,14 @@ const SETUP_FIELDS = [
   ['ruleDistinctOffice', 'Rule: 4 party members from different offices (Yes/No)'], ['officeKeyMode', 'Rule: same office means (name / nameaddr)'],
   ['ruleDistinctPostingBlock', 'Rule: party members different posting blocks (Yes/No)'], ['ruleDistinctHomeBlock', 'Rule: party members different home blocks (Yes/No)'],
   ['outsideMarkers', 'Out-of-district block markers (codes / names, comma separated)'],
+  ['icardTitle', 'Identity card heading (blank = election title)'], ['icardSignLabel', 'Identity card signatory label'],
 ];
 const DATE_FIELDS = new Set(['pollDate', 'letterDate', 'matCollectDate', 'ppReportDate', 'moReportDate', 'pcReportDate']);
 const TIME_FIELDS = new Set(['pollFrom', 'pollTo', 'matCollectTime', 'ppReportTime', 'moReportTime', 'pcReportTime']);
 const BOOL_FIELDS = new Set(['ruleDistinctOffice', 'ruleDistinctPostingBlock', 'ruleDistinctHomeBlock']);
-const OFFICER_HEAD = ['PIN', 'Name', 'Designation', 'Office Code', 'Office Name', 'Office Address', 'Mobile', 'Duty', 'Home Block Code', 'Home Block', 'Posting Block Code', 'Posting Block', 'Account No', 'Bank', 'Branch', 'IFSC'];
-const OFFICER_KEYS = ['pin', 'name', 'designation', 'officeCode', 'office', 'officeAddress', 'mobile', 'duty', 'homeBlockCode', 'homeBlock', 'postingBlockCode', 'postingBlock', 'acNo', 'bank', 'branch', 'ifsc'];
-const OFFICER_WIDTHS = [12, 24, 22, 12, 28, 26, 13, 24, 12, 16, 12, 16, 16, 14, 14, 13];
+const OFFICER_HEAD = ['PIN', 'Name', 'Designation', 'Office Code', 'Office Name', 'Office Address', 'Mobile', 'Duty', 'Home Block Code', 'Home Block', 'Posting Block Code', 'Posting Block', 'Account No', 'Bank', 'Branch', 'IFSC', 'Blood Group'];
+const OFFICER_KEYS = ['pin', 'name', 'designation', 'officeCode', 'office', 'officeAddress', 'mobile', 'duty', 'homeBlockCode', 'homeBlock', 'postingBlockCode', 'postingBlock', 'acNo', 'bank', 'branch', 'ifsc', 'bloodGroup'];
+const OFFICER_WIDTHS = [12, 24, 22, 12, 28, 26, 13, 24, 12, 16, 12, 16, 16, 14, 14, 13, 11];
 const BOOTH_HEAD = ['Constituency', 'Booth No', 'Main/Aux', 'Location / Building', 'Block Code', 'Block'];
 
 function yes(v) { const s = str(v).toLowerCase(); return s === 'yes' || s === 'y' || s === 'true' || s === '1'; }
@@ -77,6 +78,7 @@ const OFFICER_MAP = [
   ['bank', ['bank', 'bankname']],
   ['branch', ['branch', 'branchname', 'bankbranch']],
   ['ifsc', ['ifsc', 'ifsccode']],
+  ['bloodGroup', ['bloodgroup', 'blood', 'bg']],
   ['accountdetails', ['accountdetails', 'bankdetails']],
 ];
 function mapHeaderKey(h, map) {
@@ -399,7 +401,7 @@ ACT.importLegacyTraining = async () => {
 ACT.officerTemplate = () => {
   const wb = XLSX.utils.book_new();
   addSheet(wb, 'Officers', OFFICER_HEAD, [
-    ['', 'RAMESH KUMAR', 'Headmaster', '10231', 'Middle School Piprahi', 'Piprahi', '9000000001', 'PRESIDING OFFICER', '0101', 'Sheohar', '0102', 'Piprahi', '1234567890', 'SBI', 'Sheohar', 'SBIN0000001'],
+    ['', 'RAMESH KUMAR', 'Headmaster', '10231', 'Middle School Piprahi', 'Piprahi', '9000000001', 'PRESIDING OFFICER', '0101', 'Sheohar', '0102', 'Piprahi', '1234567890', 'SBI', 'Sheohar', 'SBIN0000001', 'B+'],
     ['', 'SUNITA DEVI', 'Teacher', '10458', 'High School Tariyani', 'Tariyani', '9000000002', 'POLLING OFFICER-1', '0105', 'Tariyani', '0105', 'Tariyani', '', '', '', ''],
     ['', 'MANOJ SINGH', 'Branch Manager', '20017', 'State Bank of India, Sheohar', 'Sheohar', '9000000003', 'MICRO OBSERVER', '999999', 'Others', '0101', 'Sheohar', '', '', '', ''],
   ], OFFICER_WIDTHS);
@@ -419,6 +421,7 @@ ACT.officerTemplate = () => {
     'OUT OF DISTRICT     — if the home or posting block is outside the district, write code 999999 (or name "Others").',
     '                      Such a block excludes no booth (the officer can go to any block except an in-district one he/she belongs to).',
     'Account No, Bank, Branch, IFSC — optional; printed on training attendance sheets.',
+    'Blood Group — optional; printed on the identity card when filled.',
   ]), 'Instructions');
   saveWb(wb, 'Officers_Template.xlsx');
 };

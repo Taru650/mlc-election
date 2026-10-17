@@ -57,6 +57,7 @@ function defaultSetup() {
     ruleDistinctOffice: true, officeKeyMode: 'name',
     ruleDistinctPostingBlock: false, ruleDistinctHomeBlock: false,
     outsideMarkers: DEFAULT_OUTSIDE_MARKERS,
+    icardTitle: '', icardSignLabel: 'Signature Of DEO',
   };
 }
 function defaultState() {
@@ -300,7 +301,7 @@ function hydrate(st) {
 function addLog(action) { S.log.push({ time: nowStamp(), action }); if (S.log.length > 2000) S.log.shift(); }
 
 function blankOfficer() {
-  return { pin: '', name: '', designation: '', officeCode: '', office: '', officeAddress: '', mobile: '', duty: '', homeBlockCode: '', homeBlock: '', postingBlockCode: '', postingBlock: '', acNo: '', bank: '', branch: '', ifsc: '' };
+  return { pin: '', name: '', designation: '', officeCode: '', office: '', officeAddress: '', mobile: '', duty: '', homeBlockCode: '', homeBlock: '', postingBlockCode: '', postingBlock: '', bloodGroup: '', acNo: '', bank: '', branch: '', ifsc: '' };
 }
 let _boothSeq = 0;
 function newBoothId() { _boothSeq++; return 'B' + Date.now().toString(36) + _boothSeq.toString(36) + randInt(1e6).toString(36); }
@@ -343,6 +344,7 @@ const MODULES = [
   { id: 'exempt',   label: 'Exemptions',           grp: 'Letters & Randomisation' },
   { id: 'second',   label: '2nd Randomisation',    grp: 'Letters & Randomisation', lock: 'second' },
   { id: 'final',    label: 'Final Randomisation',  grp: 'Letters & Randomisation', lock: 'final' },
+  { id: 'icards',   label: 'Identity Cards',       grp: 'Output' },
   { id: 'reports',  label: 'Reports & Letters',    grp: 'Output' },
   { id: 'data',     label: 'Save / Load / Test Data', grp: 'Output' },
 ];
@@ -352,6 +354,7 @@ function prereqs(id) {
   if (id === 'booths' && !L.setup) miss.push('Election Setup');
   if (id === 'letter1') { if (!L.officers) miss.push('Officers Database'); if (!L.training) miss.push('Training Schedule'); if (!L.setup) miss.push('Election Setup'); }
   if (id === 'exempt' && !L.officers) miss.push('Officers Database');
+  if (id === 'icards' && !PART_KINDS.some(k => S.parts.second[k])) miss.push('at least one part of the 2nd Randomisation');
   if (id === 'second') { if (!L.setup) miss.push('Election Setup'); if (!L.officers) miss.push('Officers Database'); if (!L.booths) miss.push('Booth Entry'); }
   if (id === 'final') { if (!PART_KINDS.some(k => partApplicable(k) && S.parts.second[k])) miss.push('at least one part of the 2nd Randomisation'); }
   return miss;

@@ -95,7 +95,7 @@ function generateTestState(profileKey) {
       st.officers.push({
         pin: P.distCode + pad(serial, 5), name, designation: pickRandom(DESIG[d.key]), officeCode: officeCodeOf(office), office, officeAddress: `${posting}, ${P.district}`,
         mobile: '90' + P.distCode + pad(serial, 6), duty: d.label, homeBlockCode: homeOut ? '999999' : bCode[home], homeBlock: homeOut ? 'Others' : home, postingBlockCode: postOut ? '999999' : bCode[posting], postingBlock: posting,
-        acNo: String(30000000000 + serial * 7919), bank: 'State Bank of India', branch: P.district, ifsc: 'SBIN000' + pad(1000 + randInt(8999), 4),
+        bloodGroup: randInt(100) < 70 ? pickRandom(['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']) : '', acNo: String(30000000000 + serial * 7919), bank: 'State Bank of India', branch: P.district, ifsc: 'SBIN000' + pad(1000 + randInt(8999), 4),
       });
       serial++;
     }

@@ -345,6 +345,67 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
     ok(/^Attendance_.*\.xlsx$/.test(f.suggestedFilename()), 'Excel download: ' + f.suggestedFilename());
   }
 
+  console.log('3g. Identity cards — selected officers only, party-wise & duty-wise, QR codes scan');
+  await page.addScriptTag({ path: path.resolve(__dirname, 'vendor', 'jsQR.js') });
+  const ic = await page.evaluate(async () => {
+    const S = __MLC.S, r = { bad: [] }, roles = ['PRO', 'P1', 'P2', 'P3'];
+    const sortP = (a, b) => a.partyNo.localeCompare(b.partyNo, undefined, { numeric: true });
+    r.nav = !!document.querySelector('[data-act="go"][data-arg="icards"]');
+    S.setup.icardTitle = 'TEST ICARD HEADING'; S.setup.icardSignLabel = 'Signature Of DEO (Test)';
+    __MLC.ACT.go('icards');
+    const cardsOf = () => [...document.querySelectorAll('#docBody table.icard')];
+    // party-wise
+    __MLC.ACT.icards('party');
+    const pc = cardsOf(), parties = S.second.parties.slice().sort(sortP);
+    r.partyN = pc.length; r.partyWant = parties.length * 4;
+    pc.forEach((c, i) => { const p = parties[Math.floor(i / 4)], o = S.officers.find(x => x.pin === p[roles[i % 4]]), t = c.innerText;
+      if (!t.includes(`${o.pin}-${o.name}`) || !t.includes(p.partyNo) || !t.toUpperCase().includes(('Duty : ' + o.duty.replace(/-(\d)/, ' $1')).toUpperCase()) || !t.includes(o.mobile)) r.bad.push('party card ' + i);
+      if (!t.includes('TEST ICARD HEADING') || !t.includes('Signature Of DEO (Test)') || !/Valid For Election Duty Only/.test(t)) r.bad.push('card text ' + i);
+      if (o.bloodGroup && !t.includes(o.bloodGroup)) r.bad.push('blood ' + i); if (!o.bloodGroup && /Blood Group/.test(t)) r.bad.push('blank blood shown ' + i); });
+    // decode every QR
+    const decode = src => new Promise(res => { const im = new Image(); im.onload = () => { const k = 4, m = 24, cv = document.createElement('canvas'); cv.width = im.width * k + 2 * m; cv.height = im.height * k + 2 * m; const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.imageSmoothingEnabled = false; g.drawImage(im, m, m, im.width * k, im.height * k); const d = g.getImageData(0, 0, cv.width, cv.height); const q = jsQR(d.data, cv.width, cv.height); res(q ? q.data : null); }; im.src = src; });
+    let ok = 0, maxModules = 0;
+    for (let i = 0; i < pc.length; i++) {
+      const img = pc[i].querySelector('.ic-qrimg'); const txt = await decode(img.src);
+      const p = parties[Math.floor(i / 4)], pin = p[roles[i % 4]];
+      if (txt && txt.includes('PIN:' + pin) && txt.includes(p.partyNo)) ok++; else r.bad.push('qr ' + i + ' ' + txt);
+      maxModules = Math.max(maxModules, Math.round(img.naturalWidth / 3));
+    }
+    r.qrOk = ok; r.maxModules = maxModules;
+    r.fitOverflow = [...document.querySelectorAll('#docBody .fitbox')].filter(b => b.scrollHeight > b.clientHeight + 1).length;
+    document.querySelector('#printArea').innerHTML = document.querySelector('#docBody').innerHTML;
+    document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    // duty-wise: all duties, and per duty
+    __MLC.ACT.go('icards'); document.querySelector('#icDuty').value = 'ALL'; __MLC.ACT.icards('duty');
+    const all = cardsOf().map(c => (c.innerText.match(/(\d{7})-/) || [])[1]); document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    const selected = new Set(); S.second.parties.forEach(p => roles.forEach(k => selected.add(p[k]))); S.second.pccp.forEach(x => selected.add(x.pin)); S.second.micro.forEach(x => selected.add(x.pin));
+    r.dutyAll = all.length; r.selected = selected.size;
+    if (all.some(pin => !selected.has(pin))) r.bad.push('unselected officer got a card');
+    if (new Set(all).size !== all.length) r.bad.push('duplicate card');
+    for (const [k, want] of [['PRO', parties.map(p => p.PRO)], ['MO', S.second.micro.slice().sort((a, b) => a.orderNo.localeCompare(b.orderNo, undefined, { numeric: true })).map(x => x.pin)]]) {
+      __MLC.ACT.go('icards'); document.querySelector('#icDuty').value = k; __MLC.ACT.icards('duty');
+      const got = cardsOf().map(c => (c.innerText.match(/(\d{7})-/) || [])[1]); document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+      if (JSON.stringify(got) !== JSON.stringify(want)) r.bad.push('duty-wise ' + k);
+    }
+    // gating
+    const keep = JSON.parse(JSON.stringify(S.parts)); PART_KINDS.forEach(k => { S.parts.second[k] = false; });
+    r.gated = icardList('party').length === 0 && icardList('duty', 'ALL').length === 0;
+    S.parts = keep; S.setup.icardTitle = ''; S.setup.icardSignLabel = 'Signature Of DEO';
+    return r;
+  });
+  ok(ic.nav, 'Identity Cards entry in the left menu');
+  ok(ic.partyN === ic.partyWant && ic.bad.length === 0, `party-wise: ${ic.partyN} cards (4 × parties) with correct PIN-name, party, duty, mobile, heading, signatory ${ic.bad.slice(0, 3).join(' | ')}`);
+  ok(ic.qrOk === ic.partyN && ic.maxModules <= 41, `all ${ic.qrOk} QR codes decode to the right PIN and party (largest QR ${ic.maxModules}×${ic.maxModules} modules)`);
+  ok(ic.fitOverflow === 0, 'no text cut off on any card');
+  ok(ic.dutyAll === ic.selected, `duty-wise (all duties): ${ic.dutyAll} cards = every selected officer once, nobody unselected`);
+  ok(ic.gated, 'no identity cards before a 2nd-randomisation part is locked');
+  await page.emulateMedia({ media: 'print' });
+  const icPdf = await page.pdf({ preferCSSPageSize: true });
+  await page.emulateMedia({ media: 'screen' });
+  await page.evaluate(() => { document.querySelector('#printArea').innerHTML = ''; });
+  const icPages = (icPdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+  ok(icPages === Math.ceil(ic.partyN / 8), `${ic.partyN} cards print on ${icPages} A4 pages (8 per page)`);
+
   console.log('3b. Final party letter shows designation & office and prints one letter per A4 page');
   const fl = await page.evaluate(() => { __MLC.ACT.finalLetters('polling'); const h = document.querySelector('#docBody').innerHTML; document.querySelector('#printArea').innerHTML = h; document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
     const S = __MLC.S, p = S.second.parties.find(x => x.partyNo === S.final.polling[S.booths[0].id]);

@@ -123,6 +123,22 @@ Word keep each booth's block on one page; *Excel* gives one row per officer per 
 check every row against the booth → party → officer allotment (12- and 140-booth datasets).
 The older one-line-per-booth sheet is still available as *Communication matrix*.
 
+## Identity cards
+
+*Identity Cards* (left menu, under Output) prints cards **only for officers selected in the 2nd
+randomisation**, as soon as the relevant part is locked — never for exempted or unselected
+officers. Each card: QR code | heading, duty, “Valid For Election Duty Only”; constituency
+code | mobile (and blood group, when given); photo space | party / order no., PIN-name,
+designation, office; the signature uploaded in Setup with an editable signatory label
+(default “Signature Of DEO”). The heading defaults to the election title and can be changed.
+
+* **Party-wise:** polling parties in party order, PrO-P1-P2-P3 of a party together.
+* **Duty-wise:** one duty (PrO, P1, P2, P3, PCCP, Micro Observer) or all duties in order.
+
+8 cards per A4 page (Print / PDF). Long names shrink to fit, so every card is the same size.
+The QR code holds `PIN|name|duty|party or order no.|constituency|district`; tests decode
+every QR code and compare it with the officer.
+
 ## Letters as PDF and Word
 
 Every letter / report window has **Print / PDF** (choose “Save as PDF” as the printer) and
@@ -138,8 +154,8 @@ prepared or corrected in Excel. Randomisation sheets are re-verified on opening 
 discarded if any rule is broken.
 
 **Officers** columns: `PIN, Name, Designation, Office Code, Office Name, Office Address, Mobile,
-Duty, Home Block Code, Home Block, Posting Block Code, Posting Block, Account No, Bank, Branch, IFSC`.
-Code columns are optional but recommended. Duty may be written as
+Duty, Home Block Code, Home Block, Posting Block Code, Posting Block, Account No, Bank, Branch, IFSC,
+Blood Group`. Code columns are optional but recommended; Blood Group is optional (identity cards). Duty may be written as
 `PRESIDING OFFICER / POLLING OFFICER-1 / -2 / -3 / PATROLLING MAGISTRATE / MICRO OBSERVER`
 or `PrO / P1 / P2 / P3 / PCCP / MO`. Blank PIN → district code + serial. Many alternate
 header spellings are recognised (e.g. the earlier tool's `officername`, `officename`, `block`).
@@ -173,4 +189,6 @@ The tests cover the full UI workflow, all letters/reports, Excel round-trip, 200
 repeated randomisations with rule verification, randomness, infeasible-data refusal,
 validation, legacy JSON import and booth-entry independence.
 
-Embedded library: SheetJS Community Edition 0.18.5 (Apache-2.0, `vendor/SHEETJS_LICENSE`).
+Embedded libraries: SheetJS Community Edition 0.18.5 (Apache-2.0, `vendor/SHEETJS_LICENSE`);
+qrcode-generator 1.4.4 (MIT, Kazuhiko Arase, `vendor/qrcode.js`). Test-only: jsQR 1.4.0
+(Apache-2.0, `tests/vendor/jsQR.js`) to decode the identity-card QR codes.
