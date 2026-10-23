@@ -10,6 +10,7 @@ const byOrderNo = (a, b) => a.orderNo.localeCompare(b.orderNo, undefined, { nume
 
 /** Returns { title, groups: [{ head, sub, rows: [{ ref, post, o }] }], refCol, needs } for an attendance kind. */
 function attendanceData(kind) {
+  if (kind.startsWith('cnt')) return cntAttendanceData(kind);
   const party = p => PARTY_ROLES.map(r => ({ ref: p.partyNo, post: DUTY_BY_KEY[r].label, o: officerByPin(p[r]) || {} }));
   const boothOfParty = pno => { const bid = Object.keys(S.final.polling).find(k => S.final.polling[k] === pno); return bid ? boothById(bid) : null; };
   if (kind === 'pp2party') return {
@@ -41,6 +42,8 @@ function attendanceData(kind) {
 const ATTENDANCE_KINDS = {
   pp2party: 'Polling parties — party-wise (2nd)', pp2duty: 'Polling parties — duty-wise (2nd)', mo2: 'Micro Observers (2nd)',
   ppMain: 'Main parties — party-wise (final)', ppReserve: 'Reserve parties — party-wise (final)',
+  cnt1: 'Counting personnel — duty-wise (1st)', cnt2: 'Counting parties — party-wise (2nd)',
+  cntMain: 'Counting parties — table-wise (final)', cntReserve: 'Counting reserve parties (final)',
 };
 function attendanceHtml(kind) {
   const d = attendanceData(kind);

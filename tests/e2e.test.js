@@ -817,6 +817,142 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
     ok(imp.t.date === '2026-10-12' && imp.t.venue === 'Khel Bhawan, Sheohar', 'training inside legacy Setup JSON imported');
   }
 
+  console.log('12. Counting personnel — parties of 1 CS + 2 CA from different offices, tables + reserve, letters, iCards, attendance');
+  await page.evaluate(() => { __MLC.ACT.loadTestData('small'); __MLC.ACT.lock('setup'); });
+  const cg = await page.evaluate(() => ({ nav: ['cntSetup', 'cntOfficers', 'cntLetter1', 'cntSecond', 'cntFinal', 'cntOutputs'].every(id => document.querySelector(`[data-act="go"][data-arg="${id}"]`)), cards: cntIcardList('party').length, att: attendanceRows('cnt2').length }));
+  ok(cg.nav, 'six Counting Personnel entries in the left menu');
+  ok(cg.cards === 0 && cg.att === 0, 'no counting iCards / attendance before the counting 2nd randomisation is locked');
+  for (const m of ['setup', 'officers', 'letter1']) {
+    await page.evaluate(m => __MLC.ACT.cntLock(m), m);
+    ok(await page.evaluate(m => __MLC.S.cnt.locks[m], m), `counting ${m} locked`);
+  }
+  const c1 = await page.evaluate(() => {
+    const S = __MLC.S; __MLC.ACT.cntLetters('first');
+    const docs = [...document.querySelectorAll('#docBody .doc')], r = { n: docs.length, want: S.cnt.officers.length };
+    r.ok = docs.every((d, i) => d.innerText.includes(S.cnt.officers[i].pin) && d.innerText.includes(S.cnt.officers[i].duty) && /counting of votes/i.test(d.innerText) && d.innerText.includes(S.cnt.setup.trainVenue));
+    document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    r.att = attendanceRows('cnt1').length;
+    return r;
+  });
+  ok(c1.n === c1.want && c1.ok, `1st counting letters: ${c1.n} (one per officer) with PIN, duty and training`);
+  ok(c1.att === c1.want, `attendance after 1st letter: all ${c1.att} counting officers`);
+  const cr = await page.evaluate(() => {
+    const S = __MLC.S, ok = { count: 0, roles: 0, office: 0, dup: 0 }, sets = new Set(), csOf = new Set();
+    const n = Math.ceil(S.cnt.setup.tables * 1.1);
+    for (let i = 0; i < 200; i++) {
+      const { parties } = __MLC.formCountingParties(); S.cnt.parties = parties; S.cnt.tables = {};
+      if (parties.length === n) ok.count++;
+      const pins = parties.flatMap(p => [p.CS, p.CA1, p.CA2]);
+      if (new Set(pins).size === pins.length) ok.dup++;
+      if (parties.every(p => cntOfficerByPin(p.CS).duty === 'COUNTING SUPERVISOR' && [p.CA1, p.CA2].every(x => cntOfficerByPin(x).duty === 'COUNTING ASSISTANT'))) ok.roles++;
+      if (parties.every(p => new Set([p.CS, p.CA1, p.CA2].map(x => officeKey(cntOfficerByPin(x)))).size === 3)) ok.office++;
+      sets.add(pins.join()); parties.forEach(p => csOf.add(p.CS));
+    }
+    S.cnt.parties = [];
+    return { ok, sets: sets.size, n, csUsed: csOf.size, csAll: S.cnt.officers.filter(o => o.duty === 'COUNTING SUPERVISOR').length };
+  });
+  ok(cr.ok.count === 200, `200 runs: always ${cr.n} parties (6 tables + 10% reserve)`);
+  ok(cr.ok.roles === 200 && cr.ok.dup === 200, '200 runs: 1 Counting Supervisor + 2 Counting Assistants of the correct duty, nobody twice');
+  ok(cr.ok.office === 200, '200 runs: all three members from different offices (office code)');
+  ok(cr.sets === 200 && cr.csUsed === cr.csAll, `random: 200 different results, every one of ${cr.csAll} supervisors selected at some point`);
+  await page.evaluate(() => __MLC.ACT.cntRunSecond()); await page.waitForTimeout(1400);
+  await page.evaluate(() => __MLC.ACT.cntLock('second'));
+  const c2 = await page.evaluate(() => {
+    const S = __MLC.S, r = { locked: S.cnt.locks.second, n: S.cnt.parties.length };
+    __MLC.ACT.cntLetters('second');
+    let docs = [...document.querySelectorAll('#docBody .doc')]; r.letters = docs.length;
+    r.later = docs.every(d => d.innerText.includes('Will be informed later') && !/RESERVE/.test(d.innerText) && d.innerText.includes(S.cnt.setup.hall) && d.innerText.includes('06:30'));
+    document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    __MLC.ACT.cntLetters('second3'); docs = [...document.querySelectorAll('#docBody .doc')]; r.copies = docs.length;
+    r.ticks = docs.every((d, i) => { const role = ['CS', 'CA1', 'CA2'][i % 3], row = [...d.querySelectorAll('table.lt tr')].find(tr => tr.querySelector('.tick')); return d.querySelectorAll('.tick').length === 2 && row && row.innerText.includes(cntOfficerByPin(S.cnt.parties.slice().sort(byPartyNo)[Math.floor(i / 3)][role]).name); });
+    document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    r.att2 = attendanceRows('cnt2').length;
+    return r;
+  });
+  ok(c2.locked && c2.n === 7, 'counting 2nd randomisation verified and locked (7 parties)');
+  ok(c2.letters === 7 && c2.later, '2nd counting letters: one per party, Table No. "Will be informed later", hall and reporting time printed');
+  ok(c2.copies === 21 && c2.ticks, '3-copy set: 21 letters, ✔ before CS / CA-1 / CA-2 on the matching copy');
+  ok(c2.att2 === 21, 'attendance after 2nd: 21 rows party-wise');
+  const ci = await page.evaluate(async () => {
+    const S = __MLC.S, r = { bad: [] };
+    __MLC.ACT.cntIcards('party');
+    const cards = [...document.querySelectorAll('#docBody table.icard')], parties = S.cnt.parties.slice().sort(byPartyNo);
+    r.n = cards.length;
+    const decode = src => new Promise(res => { const im = new Image(); im.onload = () => { const k = 4, m = 24, cv = document.createElement('canvas'); cv.width = im.width * k + 2 * m; cv.height = im.height * k + 2 * m; const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.imageSmoothingEnabled = false; g.drawImage(im, m, m, im.width * k, im.height * k); const q = jsQR(g.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height); res(q ? q.data : null); }; im.src = src; });
+    for (let i = 0; i < cards.length; i++) {
+      const p = parties[Math.floor(i / 3)], role = ['CS', 'CA1', 'CA2'][i % 3], o = cntOfficerByPin(p[role]), t = cards[i].innerText;
+      if (!t.includes(`${o.pin}-${o.name}`) || !t.includes(p.partyNo) || !t.includes(role === 'CS' ? 'Counting Supervisor' : 'Counting Assistant') || !t.includes(o.mobile)) r.bad.push('card ' + i);
+      const q = await decode(cards[i].querySelector('.ic-qrimg').src);
+      if (!q || !q.includes('PIN:' + o.pin) || !q.includes(role === 'CS' ? '|CS|' : '|CA|')) r.bad.push('qr ' + i + ' ' + q);
+    }
+    r.overflow = [...document.querySelectorAll('#docBody .fitbox')].filter(b => b.scrollHeight > b.clientHeight + 1).length;
+    document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    r.cs = cntIcardList('CS').length; r.ca = cntIcardList('CA').length; r.all = cntIcardList('ALL').length;
+    r.selectedOnly = cntIcardList('ALL').every(c => parties.some(p => [p.CS, p.CA1, p.CA2].includes(c.o.pin)));
+    return r;
+  });
+  ok(ci.n === 21 && ci.bad.length === 0, `counting iCards party-wise: 21 cards, PIN-name, party, duty, mobile correct and every QR decodes ${ci.bad.slice(0, 3).join(' | ')}`);
+  ok(ci.cs === 7 && ci.ca === 14 && ci.all === 21 && ci.selectedOnly && ci.overflow === 0, 'duty-wise: 7 supervisors, 14 assistants; only selected officers; no text cut off');
+  const tr = await page.evaluate(() => {
+    const S = __MLC.S, r = { valid: 0, everyParty: new Set() };
+    for (let i = 0; i < 200; i++) {
+      S.cnt.tables = __MLC.allotCountingTables();
+      const t = Object.values(S.cnt.tables).sort((a, b) => a - b);
+      if (t.join() === '1,2,3,4,5,6' && __MLC.cntAudit().every(c => c.ok)) r.valid++;
+      Object.keys(S.cnt.tables).forEach(p => r.everyParty.add(p));
+    }
+    S.cnt.tables = {}; r.everyParty = r.everyParty.size;
+    return r;
+  });
+  ok(tr.valid === 200 && tr.everyParty === 7, '200 table allotments: tables 1–6 each once, 1 reserve; every party got a table at some point');
+  await page.evaluate(() => __MLC.ACT.cntRunFinal()); await page.waitForTimeout(1400);
+  await page.evaluate(() => __MLC.ACT.cntLock('final'));
+  const cf = await page.evaluate(() => {
+    const S = __MLC.S, r = { locked: S.cnt.locks.final };
+    __MLC.ACT.cntLetters('final');
+    const docs = [...document.querySelectorAll('#docBody .doc')]; r.n = docs.length;
+    r.tables = docs.map(d => { const row = [...d.querySelectorAll('tr')].find(tr => /Table No\./.test(tr.innerText)); return row ? row.cells[1].innerText.trim() : '?'; });
+    r.match = docs.every(d => { const pno = (d.innerText.match(/COUNTING PARTY NO :- (CP-\d+)/) || [])[1]; const t = S.cnt.tables[pno]; return d.innerText.includes(t ? `\t${t}` : 'RESERVE') || (t && d.querySelector('b') && [...d.querySelectorAll('tr')].some(tr => /Table No\./.test(tr.innerText) && tr.cells[1].innerText.trim() === String(t))); });
+    document.querySelector('#printArea').innerHTML = document.querySelector('#docBody').innerHTML;
+    document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    r.main = attendanceRows('cntMain').length; r.res = attendanceRows('cntReserve').length;
+    r.mainOrder = attendanceData('cntMain').groups.map(g => g.head.match(/Table No\. (\d+)/)[1]).join();
+    return r;
+  });
+  ok(cf.locked, 'counting final randomisation verified and locked');
+  ok(cf.n === 7 && cf.tables.slice(0, 6).join() === '1,2,3,4,5,6' && cf.tables[6] === 'RESERVE' && cf.match, `final letters: tables ${cf.tables.join(', ')} — each party's own table, RESERVE for the reserve party`);
+  ok(cf.main === 18 && cf.res === 3 && cf.mainOrder === '1,2,3,4,5,6', 'attendance after final: 18 rows table-wise (tables 1–6 in order), 3 rows reserve');
+  await page.emulateMedia({ media: 'print' });
+  const cPdf = await page.pdf({ preferCSSPageSize: true });
+  await page.emulateMedia({ media: 'screen' });
+  await page.evaluate(() => { document.querySelector('#printArea').innerHTML = ''; });
+  const cPages = (cPdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
+  ok(cPages === 7, `7 final counting letters print on ${cPages} A4 pages (one each)`);
+  const cx = await page.evaluate(() => {
+    const S = __MLC.S, st = __MLC.parseProjectWorkbook(XLSX.read(XLSX.write(__MLC.buildProjectWorkbook(), { type: 'array', bookType: 'xlsx' }), { type: 'array' }));
+    const r = {
+      parties: JSON.stringify(st.cnt.parties) === JSON.stringify(S.cnt.parties.slice().sort(byPartyNo)), tables: JSON.stringify(st.cnt.tables, Object.keys(st.cnt.tables).sort()) === JSON.stringify(S.cnt.tables, Object.keys(S.cnt.tables).sort()),
+      officers: st.cnt.officers.length === S.cnt.officers.length && st.cnt.officers.every((o, i) => o.pin === S.cnt.officers[i].pin && o.office === S.cnt.officers[i].office && o.duty === S.cnt.officers[i].duty),
+      setup: ['tables', 'reservePct', 'hall', 'countDate', 'countTime', 'reportVenue', 'reportDate', 'reportTime'].every(k => String(st.cnt.setup[k]) === String(S.cnt.setup[k])),
+      locks: JSON.stringify(st.cnt.locks) === JSON.stringify(S.cnt.locks),
+    };
+    // tamper: put a supervisor in an assistant's place → discarded on opening
+    const keep = JSON.parse(JSON.stringify(S.cnt));
+    S.cnt.parties[0].CA1 = S.cnt.parties[1].CS; r.msg = verifyCountingOnOpen(); r.dropped = S.cnt.parties.length === 0 && !S.cnt.locks.second;
+    S.cnt = keep; invalidateIndexes();
+    // infeasible: every assistant in one office
+    const k2 = JSON.parse(JSON.stringify(S.cnt.officers));
+    S.cnt.officers.forEach(o => { if (o.duty === 'COUNTING ASSISTANT') o.officeCode = '1'; }); invalidateIndexes();
+    r.infeasible = cntFeasibility().length > 0; try { __MLC.formCountingParties(); r.threw = false; } catch (e) { r.threw = true; }
+    S.cnt.officers = k2; invalidateIndexes();
+    return r;
+  });
+  ok(cx.parties && cx.tables && cx.officers && cx.setup && cx.locks, 'project Excel round-trip keeps counting setup, officers, parties, tables and locks');
+  ok(cx.dropped && /discarded/.test(cx.msg), 'tampered counting parties are discarded when a project is opened');
+  ok(cx.infeasible && cx.threw, 'all assistants from one office → refused with a clear reason');
+  const ce = await page.evaluate(() => { __MLC.S = __MLC.generateErrorState(); const v = __MLC.validateCntOfficers(); return v.errors.join(' | '); });
+  ok(/unknown|PEON/.test(ce) && /duplicate PIN/.test(ce), 'error dataset: unknown counting duty and duplicate PIN reported');
+
   // Produce the shipped test-data workbooks through the real download path
   if (process.env.WRITE_TEST_DATA) {
     const outDir = path.resolve(__dirname, '..', 'test-data');
@@ -826,7 +962,7 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
       const d = await dl; await d.saveAs(path.join(outDir, d.suggestedFilename()));
       console.log('  wrote test-data/' + d.suggestedFilename());
     }
-    for (const a of ['officerTemplate', 'boothTemplate']) {
+    for (const a of ['officerTemplate', 'boothTemplate', 'cntTemplate']) {
       const dl = page.waitForEvent('download');
       await page.evaluate(a => __MLC.ACT[a](), a);
       const d = await dl; await d.saveAs(path.join(outDir, d.suggestedFilename()));
@@ -838,8 +974,8 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   const small = path.resolve(__dirname, '..', 'test-data', 'TEST_Sheohar_Project.xlsx');
   if (fs.existsSync(small)) {
     const fc = page.waitForEvent('filechooser');
-    await page.evaluate(() => { __MLC.ACT.openProject(); });
-    (await fc).setFiles(small);
+    await page.evaluate(() => { __MLC.S = {}; __MLC.ACT.openProject(); });
+    await (await fc).setFiles(small);
     await page.waitForFunction(() => __MLC.S.officers.length > 0);
     const o = await page.evaluate(() => ({ off: __MLC.S.officers.length, b: __MLC.S.booths.length, t: __MLC.S.training['PRESIDING OFFICER'][0].venue }));
     ok(o.off > 50 && o.b === 12 && o.t, `opened test project: ${o.off} officers, ${o.b} booths`);

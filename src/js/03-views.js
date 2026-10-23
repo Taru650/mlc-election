@@ -15,12 +15,12 @@ function renderNav() {
   let html = '', grp = '';
   MODULES.forEach(m => {
     if (m.grp !== grp) { grp = m.grp; html += `<div class="grp">${esc(grp)}</div>`; }
-    const locked = m.lock && S.locks[m.lock];
+    const locked = m.lock && (m.cnt ? S.cnt.locks[m.lock] : S.locks[m.lock]);
     const miss = prereqs(m.id);
     const cls = ['nav-item', UI.view === m.id ? 'active' : '', locked ? 'done' : '', miss.length ? 'blocked' : ''].join(' ');
-    const partial = (m.lock === 'second' || m.lock === 'final') && !locked && partsLockedCount(m.lock) ? `<span class="tag b-warn">${partsLockedCount(m.lock)}/${partsApplicableCount()} locked</span>` : '';
+    const partial = !m.cnt && (m.lock === 'second' || m.lock === 'final') && !locked && partsLockedCount(m.lock) ? `<span class="tag b-warn">${partsLockedCount(m.lock)}/${partsApplicableCount()} locked</span>` : '';
     const tag = locked ? '<span class="tag b-ok">Locked</span>' : partial || (m.lock ? (miss.length ? '<span class="tag">Waiting</span>' : '<span class="tag b-warn">Open</span>') : '');
-    html += `<button class="${cls}" data-act="go" data-arg="${m.id}"><span class="num">${locked ? '✓' : (m.lock ? MODULES.filter(x => x.lock).indexOf(m) + 1 : '•')}</span>${esc(m.label)}${tag}</button>`;
+    html += `<button class="${cls}" data-act="go" data-arg="${m.id}"><span class="num">${locked ? '✓' : (m.lock ? (m.cnt ? 'C' + (MODULES.filter(x => x.lock && x.cnt).indexOf(m) + 1) : MODULES.filter(x => x.lock && !x.cnt).indexOf(m) + 1) : '•')}</span>${esc(m.label)}${tag}</button>`;
   });
   $('#sideNav').innerHTML = html;
 }
@@ -88,6 +88,11 @@ VIEWS.home = () => {
       ${step('6 · 2nd Randomisation', 'second', 'second', 'Needs Officers + Booths', 'Polling parties, PCCP and Micro Observers — three independent parts, each run / re-run / locked separately, in any order. Booth not disclosed.')}
       ${step('7 · Final Randomisation', 'final', 'final', 'Each part needs the same part locked in the 2nd round', 'Tags parties / PCCP / MO to booths. Home & posting block of every member is excluded. Untagged = Reserve.')}
     </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h3>Counting personnel</h3><span class="spacer"></span><button class="btn sm pri" data-act="go" data-arg="cntSetup">Open</button></div>
+    <p class="small muted">Separate exercise with its own officer list: Counting Setup → Counting Officers → 1st letter → 2nd randomisation (parties of 1 Counting Supervisor + 2 Counting Assistants from 3 different offices) → final table allotment.</p>
+    <div class="kpis">${kpi('Tables', intOr0(S.cnt.setup.tables))}${kpi('Supervisors', S.cnt.officers.filter(o => o.duty === 'COUNTING SUPERVISOR').length)}${kpi('Assistants', S.cnt.officers.filter(o => o.duty === 'COUNTING ASSISTANT').length)}${kpi('Counting parties', S.cnt.parties.length)}${kpi('Tables allotted', Object.keys(S.cnt.tables).length)}</div>
   </div>
   <div class="card"><div class="card-head"><h3>Rule check (live)</h3></div>${auditHtml(runAudit())}</div>`;
 };

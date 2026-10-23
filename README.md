@@ -123,6 +123,23 @@ Word keep each booth's block on one page; *Excel* gives one row per officer per 
 check every row against the booth → party → officer allotment (12- and 140-booth datasets).
 The older one-line-per-booth sheet is still available as *Communication matrix*.
 
+## Counting personnel
+
+A separate exercise in the left menu (**Counting Personnel**), with its own officer list and locks:
+
+| Step | What it does |
+|---|---|
+| Counting Setup | Number of **tables**, **reserve %**, counting hall, date of counting, counting start time, reporting place / date / time; optional training (venue, date, time) |
+| Counting Officers | Excel import (`Counting_Officers_Template.xlsx`) or manual entry. Duty = `COUNTING SUPERVISOR` / `COUNTING ASSISTANT` (or `CS` / `CA`) |
+| 1st letter | One per officer: duty (and training if given). Attendance of all appointed counting officers, duty-wise |
+| 2nd randomisation | Parties = tables + reserve %. Each party = 1 Counting Supervisor + 2 Counting Assistants, **all three from different offices** (Office Code decides). Home / posting block is **not** considered. Letter says Table No. “Will be informed later” |
+| Final randomisation | Tables 1…N allotted at random; the remaining parties get **RESERVE** in place of the table number |
+
+Outputs (*Counting Letters, iCards & Attendance*): 1st / 2nd / final letters (office copy, or 3 copies with ✔ before
+CS / CA-1 / CA-2), identity cards (party-wise or duty-wise, same card format), attendance sheets after the 1st letter,
+2nd randomisation (party-wise) and final randomisation (table-wise and reserve) in PDF / Word / Excel. Every run is
+re-verified independently; locking is refused if a rule fails. Saved in the project workbook (`Counting_*` sheets).
+
 ## Identity cards
 
 *Identity Cards* (left menu, under Output) prints cards **only for officers selected in the 2nd
@@ -172,7 +189,7 @@ Dates are `DD-MM-YYYY` (ISO and Excel dates also accepted); times `HH:MM`.
 | `TEST_Sheohar_Project.xlsx` | 5 blocks, 6 TC + 6 GC booths, 126 officers — quick full rehearsal |
 | `TEST_Muzaffarpur_Project.xlsx` | 16 blocks, 60 TC + 80 GC booths, ~1,000 officers — volume test |
 | `TEST_With_Errors_Project.xlsx` | Deliberate mistakes (duplicate PIN, missing block, unknown duty…) to test validation |
-| `Officers_Template.xlsx`, `Booths_Template.xlsx` | Blank formats for live data |
+| `Officers_Template.xlsx`, `Booths_Template.xlsx`, `Counting_Officers_Template.xlsx` | Blank formats (with sample rows) for live data |
 
 All names and numbers in test files are fictitious. The same datasets can be generated
 inside the tool (*Save / Load / Test Data*).

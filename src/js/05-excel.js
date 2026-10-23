@@ -215,6 +215,7 @@ const README_LINES = [
   'Officers — Home Block (Code) and Posting Block (Code) are used for exclusion: nobody is tagged to a booth in his/her home or posting block. When both officer and booth have a block code (e.g. census code), the code decides.',
   'Officers — Office Code (or Office Name if no code) is used for the rule that the 4 members of a party must be from different offices. Codes protect against spelling mistakes in names.',
   'Booths   — Constituency must be one of the codes in the Constituencies sheet (e.g. TC, GC). Block name or Block Code is mandatory (Block Code recommended).',
+  'Counting — Counting_Setup, Counting_Officers (Duty: COUNTING SUPERVISOR / COUNTING ASSISTANT) may also be edited; Counting_Parties is re-verified on opening.',
   'Dates    — DD-MM-YYYY.  Times — HH:MM (24 hour).',
 ];
 
@@ -257,6 +258,7 @@ function buildProjectWorkbook() {
   }
   addSheet(wb, 'Exemptions', EXEMPT_HEAD, exemptRows(), [12, 24, 22, 16, 50, 26, 12, 20]);
   addSheet(wb, 'Constituency_Fixed', ['PIN', 'Constituency'], Object.entries(S.constFix), [12, 14]);
+  addCountingSheets(wb);
   addSheet(wb, 'Audit_Log', ['Time', 'Action'], S.log.map(l => [l.time, l.action]), [20, 100]);
   return wb;
 }
@@ -300,6 +302,7 @@ function parseProjectWorkbook(wb) {
     if (sig.startsWith('data:image/')) st.setup.signature = sig;
     sheetObjects(findSheet(wb, 'Constituency_Fixed')).forEach(r => { const pin = str(r.pin).replace(/\.0$/, ''); if (pin && str(r.constituency)) st.constFix[pin] = str(r.constituency).toUpperCase(); });
     sheetObjects(findSheet(wb, 'Exemptions')).forEach(r => { const pin = str(r.pin).replace(/\.0$/, ''); if (pin && str(r.reason)) st.exempt[pin] = { category: str(r.category) || 'Other', reason: str(r.reason), orderRef: str(r.orderref), date: parseDateAny(r.date), at: str(r.recordedat) }; });
+    parseCountingSheets(wb, st);
     st.log = sheetObjects(findSheet(wb, 'Audit_Log')).map(r => ({ time: str(r.time), action: str(r.action) })).filter(l => l.action);
   } finally { S = prevS; }
   return st;
@@ -329,6 +332,7 @@ ACT.openProject = async () => {
   if (S.locks.officers && validateOfficers().errors.length) { S.locks.officers = false; msgs.push('Officers sheet has errors — Officers unlocked for correction.'); }
   if (S.locks.booths && validateBooths().errors.length) { S.locks.booths = false; msgs.push('Booths sheet has errors — Booths unlocked for correction.'); }
   if (S.locks.setup && validateSetup().errors.length) { S.locks.setup = false; msgs.push('Setup has errors — Setup unlocked for correction.'); }
+  const cm = verifyCountingOnOpen(); if (cm) msgs.push(cm);
   addLog(`Project opened from file ${f.name}`);
   persist(); UI.view = 'home'; render();
   if (msgs.length) showErrors('Project opened with corrections', msgs); else toast(`Opened ${f.name}: ${S.officers.length} officers, ${S.booths.length} booths.`, 'ok');

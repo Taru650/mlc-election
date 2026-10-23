@@ -17,7 +17,7 @@ function qrDataUrl(text) {
 }
 /** Compact QR payload (fewer modules = larger squares = reliable scanning from a printed card). */
 function icardQrText(c) {
-  const short = { 'PRESIDING OFFICER': 'PRO', 'POLLING OFFICER-1': 'P1', 'POLLING OFFICER-2': 'P2', 'POLLING OFFICER-3': 'P3', 'PATROLLING MAGISTRATE': 'PCCP', 'MICRO OBSERVER': 'MO' }[c.duty] || c.duty;
+  const short = { 'PRESIDING OFFICER': 'PRO', 'POLLING OFFICER-1': 'P1', 'POLLING OFFICER-2': 'P2', 'POLLING OFFICER-3': 'P3', 'PATROLLING MAGISTRATE': 'PCCP', 'MICRO OBSERVER': 'MO', 'COUNTING SUPERVISOR': 'CS', 'COUNTING ASSISTANT': 'CA' }[c.duty] || c.duty;
   return [`PIN:${c.o.pin}`, c.o.name, short, c.ref, c.const, S.setup.district].join('|');
 }
 /** Card descriptors {o, duty, ref, refLabel, const} for a selection. */
@@ -39,9 +39,9 @@ function icardHtml(c) {
   return `<table class="icard"><colgroup><col style="width:24%"><col style="width:76%"></colgroup>
     <tr class="ic-top"><td class="ic-qr">${qr ? `<img class="ic-qrimg" src="${qr}" alt="QR">` : ''}</td>
       <td class="ic-head"><div class="ic-headbox fitbox"><div class="ic-title">${esc(st.icardTitle || st.electionTitle)}</div><div class="ic-duty">Duty : ${esc(postName(c.duty))}</div><div class="ic-valid">(Valid For Election Duty Only)</div></div></td></tr>
-    <tr class="ic-mid"><td class="ic-code">${esc(c.const)}</td><td class="ic-mob"><b>Mob. No:-</b>${esc(o.mobile)}${o.bloodGroup ? `&nbsp;&nbsp; <b>Blood Group:</b> ${esc(o.bloodGroup)}` : ''}</td></tr>
+    <tr class="ic-mid"><td class="ic-code">${esc(c.code != null ? c.code : c.const)}</td><td class="ic-mob"><b>Mob. No:-</b>${esc(o.mobile)}${o.bloodGroup ? `&nbsp;&nbsp; <b>Blood Group:</b> ${esc(o.bloodGroup)}` : ''}</td></tr>
     <tr class="ic-body"><td class="ic-photo"><div class="ic-photobox"></div></td>
-      <td class="ic-det"><div class="ic-detbox fitbox"><div class="ic-party">${esc(c.refLabel)}:- ${esc(c.ref)} &nbsp;(${esc(constName(c.const))})</div><div>${esc(o.pin)}-${esc(o.name)}</div><div>${esc(o.designation)}</div><div>${esc(o.office)}</div>${o.officeAddress ? `<div class="ic-addr">${esc(o.officeAddress)}</div>` : ''}</div></td></tr>
+      <td class="ic-det"><div class="ic-detbox fitbox"><div class="ic-party">${esc(c.refLabel)}:- ${esc(c.ref)} &nbsp;(${esc(c.sub != null ? c.sub : constName(c.const))})</div><div>${esc(o.pin)}-${esc(o.name)}</div><div>${esc(o.designation)}</div><div>${esc(o.office)}</div>${o.officeAddress ? `<div class="ic-addr">${esc(o.officeAddress)}</div>` : ''}</div></td></tr>
     <tr class="ic-sig"><td colspan="2"><div class="ic-sigwrap">${st.signature ? `<img class="ic-sigimg" src="${esc(st.signature)}" alt="">` : ''}<div class="ic-siglbl">${esc(st.icardSignLabel || 'Signature Of DEO')}</div></div></td></tr>
   </table>`;
 }
@@ -74,7 +74,7 @@ VIEWS.icards = () => {
   const st = S.setup, sp = S.parts.second;
   const counts = { party: icardList('party').length };
   ['PRO', 'P1', 'P2', 'P3', 'PM', 'MO'].forEach(k => { counts[k] = icardList('duty', k).length; });
-  const sample = icardList('party')[0] || icardList('duty', 'ALL')[0];
+  const sample = icardList('party')[0] || icardList('duty', 'ALL')[0] || cntIcardList('party')[0];
   return `<div class="card"><div class="card-head"><h2>Identity Cards</h2></div>
     <p class="small muted">Cards are generated <b>only for officers selected in the 2nd randomisation</b> (each part after it is locked). Printed 8 cards per A4 page; use <b>Print / PDF</b> in the preview. QR code holds PIN, name, duty, party / order no. and constituency. Photo space is left blank for pasting.</p>
     <div class="grid g2">
@@ -92,6 +92,11 @@ VIEWS.icards = () => {
         <button class="btn pri" data-act="icards" data-arg="duty" ${PART_KINDS.some(k => sp[k]) ? '' : 'disabled'}>Open</button></div></div>
     </div>
     ${PART_KINDS.some(k => sp[k]) ? '' : '<div class="alert warn" style="margin-top:10px">Lock at least one part of the 2nd randomisation to generate identity cards.</div>'}
+  </div>
+  <div class="card"><div class="card-head"><h3>Counting personnel</h3></div>
+    <p class="small muted">Only officers in counting parties of the <b>locked</b> counting 2nd randomisation (1 Counting Supervisor + 2 Counting Assistants per party). Same card format, heading and signature.</p>
+    <div class="btn-row">${[['party', 'Party-wise'], ['CS', 'Counting Supervisors'], ['CA', 'Counting Assistants'], ['ALL', 'Duty-wise (all)']].map(([k, l]) => `<button class="btn ${k === 'party' ? 'pri' : ''}" data-act="cntIcards" data-arg="${k}" ${S.cnt.locks.second ? '' : 'disabled'}>${l} (${cntIcardList(k).length})</button>`).join('')}</div>
+    ${S.cnt.locks.second ? '' : '<div class="alert warn" style="margin-top:10px">Lock the counting 2nd randomisation to generate counting identity cards.</div>'}
   </div>
   ${sample ? `<div class="card"><div class="card-head"><h3>Sample card</h3></div><div class="doc icp" style="max-width:420px;padding:10px">${icardHtml(sample)}</div></div>` : ''}`;
 };

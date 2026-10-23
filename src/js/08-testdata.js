@@ -9,7 +9,7 @@ const TEST_PROFILES = {
     roCumDeo: 'District Election Officer cum District Magistrate, Sheohar (TEST DATA)',
     blocks: ['Sheohar', 'Piprahi', 'Purnahiya', 'Dumri Katsari', 'Tariyani'],
     cons: [{ code: 'TC', name: '04-Tirhut Teachers', booths: 6, pccp: 6, micro: 6 }, { code: 'GC', name: '04-Tirhut Graduates', booths: 6, pccp: 6, micro: 6 }],
-    surplus: 1.35, venue1: 'AV Hall, MIT Muzaffarpur', venue2: 'Khel Bhawan, Sheohar',
+    surplus: 1.35, venue1: 'AV Hall, MIT Muzaffarpur', venue2: 'Khel Bhawan, Sheohar', tables: 6,
   },
   large: {
     title: 'Large — 16 blocks, 60 TC + 80 GC booths',
@@ -18,7 +18,7 @@ const TEST_PROFILES = {
     roCumDeo: 'District Election Officer cum District Magistrate, Muzaffarpur (TEST DATA)',
     blocks: ['Aurai', 'Bandra', 'Bochaha', 'Gaighat', 'Kanti', 'Katra', 'Kurhani', 'Marwan', 'Minapur', 'Motipur', 'Musahari', 'Paroo', 'Sahebganj', 'Sakra', 'Saraiya', 'Muraul'],
     cons: [{ code: 'TC', name: '04-Tirhut Teachers', booths: 60, pccp: 15, micro: 60 }, { code: 'GC', name: '04-Tirhut Graduates', booths: 80, pccp: 20, micro: 80 }],
-    surplus: 1.25, venue1: 'Auditorium, Collectorate Muzaffarpur', venue2: 'Town Hall, Muzaffarpur',
+    surplus: 1.25, venue1: 'Auditorium, Collectorate Muzaffarpur', venue2: 'Town Hall, Muzaffarpur', tables: 14,
   },
 };
 const FIRST = ['RAMESH', 'SURESH', 'MAHESH', 'ANIL', 'SUNIL', 'RAJESH', 'MANOJ', 'SANJAY', 'VINOD', 'ARVIND', 'PANKAJ', 'RAKESH', 'DINESH', 'AJAY', 'VIJAY', 'NITISH', 'RAVI', 'ALOK', 'AMIT', 'SANTOSH', 'PRAMOD', 'UMESH', 'SHAILESH', 'MUKESH', 'DEEPAK', 'RANJIT', 'SUNITA', 'ANITA', 'REKHA', 'POONAM', 'KIRAN', 'NEHA', 'PRIYANKA', 'SAVITA', 'MAMTA', 'RINKU', 'ASHA', 'USHA', 'NIRMALA', 'KUMARI ANJALI', 'MD. SHAHID', 'MD. IRFAN', 'ABDUL KALAM', 'NASREEN', 'FARHAT'];
@@ -101,6 +101,29 @@ function generateTestState(profileKey) {
     }
   });
   st.officers = shuffle(st.officers);
+  // counting personnel (separate list): parties = tables + 10 %, ~40 % surplus, offices spread so 3 different offices is easy
+  Object.assign(st.cnt.setup, {
+    tables: P.tables, reservePct: 10, hall: `Counting Hall, ${P.venue1}`, countDate: '2026-10-28', countTime: '08:00',
+    reportVenue: `Counting Centre, ${P.venue1}`, reportDate: '2026-10-28', reportTime: '06:30',
+    trainVenue: P.venue2, trainDate: '2026-10-26', trainTime: '11:00',
+  });
+  const cParties = Math.ceil(P.tables * 1.1);
+  const cDesig = { CS: ['Assistant Engineer', 'Section Officer', 'Block Agriculture Officer', 'Revenue Officer', 'Circle Inspector'], CA: ['Clerk', 'Office Assistant', 'Data Entry Operator', 'Accountant', 'Upper Division Clerk'] };
+  const cOffices = ['Road Construction Division', 'Building Construction Division', 'District Education Office', 'District Agriculture Office', 'Block Office', 'Circle Office', 'Treasury Office', 'District Welfare Office', 'Minor Irrigation Division', 'PHED Division', 'District Supply Office', 'Labour Office'];
+  let cSerial = 1;
+  [['CS', Math.ceil(cParties * 1.4)], ['CA', Math.ceil(2 * cParties * 1.4)]].forEach(([k, n]) => {
+    for (let i = 0; i < n; i++) {
+      let name; do { name = `${pickRandom(FIRST)} ${pickRandom(LAST)}`; if (usedNames.has(name)) name += ' ' + String.fromCharCode(65 + randInt(26)); } while (usedNames.has(name)); usedNames.add(name);
+      const block = pickRandom(P.blocks), office = `${pickRandom(cOffices)}, ${block}`;
+      st.cnt.officers.push({
+        pin: P.distCode + 'C' + pad(cSerial, 4), name, designation: pickRandom(cDesig[k]), officeCode: officeCodeOf(office), office, officeAddress: P.district,
+        mobile: '91' + P.distCode + pad(cSerial, 6), duty: k === 'CS' ? 'COUNTING SUPERVISOR' : 'COUNTING ASSISTANT', homeBlockCode: '', homeBlock: '', postingBlockCode: bCode[block], postingBlock: block,
+        bloodGroup: randInt(100) < 70 ? pickRandom(['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']) : '',
+      });
+      cSerial++;
+    }
+  });
+  st.cnt.officers = shuffle(st.cnt.officers);
   st.log = [{ time: nowStamp(), action: `Test data generated (${P.title})` }];
   return st;
 }
@@ -117,6 +140,8 @@ function generateErrorState() {
   const inDist = o.findIndex((x, i) => i > 9 && x.postingBlockCode !== '999999');
   o[inDist].postingBlockCode = '7777'; // in-district block name with a wrong code
   o[7].homeBlock = '';
+  st.cnt.officers[0].duty = 'PEON'; // unknown counting duty
+  st.cnt.officers[1].pin = st.cnt.officers[2].pin; // duplicate counting PIN
   st.booths[0].block = ''; st.booths[0].blockCode = '';
   st.booths[1].const = 'XC';
   st.booths[3].no = st.booths[2].no; st.booths[3].const = st.booths[2].const;
@@ -145,15 +170,15 @@ VIEWS.data = () => `
         <div class="btn-row"><button class="btn pri sm" data-act="saveProject">Save Project</button><button class="btn sm" data-act="openProject">Open Project</button></div></div>
       <div class="step"><h4>Configuration only</h4><div class="small muted">Setup + constituencies + training schedule as Excel. Useful to prepare in Excel or share between districts.</div>
         <div class="btn-row"><button class="btn sm" data-act="exportConfigExcel">Download</button><button class="btn sm" data-act="importConfigExcel">Import</button></div></div>
-      <div class="step"><h4>Blank templates</h4><div class="small muted">Column formats for officers and booths.</div>
-        <div class="btn-row"><button class="btn sm" data-act="officerTemplate">Officers template</button><button class="btn sm" data-act="boothTemplate">Booths template</button></div></div>
+      <div class="step"><h4>Blank templates</h4><div class="small muted">Column formats for officers, booths and counting officers.</div>
+        <div class="btn-row"><button class="btn sm" data-act="officerTemplate">Officers template</button><button class="btn sm" data-act="boothTemplate">Booths template</button><button class="btn sm" data-act="cntTemplate">Counting officers template</button></div></div>
       <div class="step"><h4>Files from the earlier tool</h4><div class="small muted">Import the old Setup JSON (also imports its training schedule) or Training JSON.</div>
         <div class="btn-row"><button class="btn sm" data-act="importLegacySetup" ${S.locks.setup ? 'disabled' : ''}>Setup JSON</button><button class="btn sm" data-act="importLegacyTraining" ${S.locks.training ? 'disabled' : ''}>Training JSON</button></div></div>
     </div></div>
   <div class="card"><div class="card-head"><h3>Test data (fictitious)</h3></div>
     <div class="alert warn">Test data uses made-up names and numbers. Load it to rehearse the whole workflow, then start a new project for live data (Dashboard → “Start a new, empty project”) or open your live project file.</div>
     <div class="tbl-wrap" style="max-height:none"><table class="t"><thead><tr><th>Dataset</th><th>Contents</th><th></th></tr></thead><tbody>
-    ${Object.entries(TEST_PROFILES).map(([k, p]) => `<tr><td><b>${esc(p.title)}</b></td><td class="small">${p.blocks.length} blocks · ${p.cons.map(c => `${c.code}: ${c.booths} booths, ${c.pccp} PCCP, ${c.micro} MO`).join(' · ')} · officers ≈ ${Math.round((p.surplus) * 100)}% of need · 3 trainings</td>
+    ${Object.entries(TEST_PROFILES).map(([k, p]) => `<tr><td><b>${esc(p.title)}</b></td><td class="small">${p.blocks.length} blocks · ${p.cons.map(c => `${c.code}: ${c.booths} booths, ${c.pccp} PCCP, ${c.micro} MO`).join(' · ')} · officers ≈ ${Math.round((p.surplus) * 100)}% of need · 3 trainings · counting: ${p.tables} tables</td>
       <td class="nowrap"><button class="btn sm pri" data-act="loadTestData" data-arg="${k}">Load into tool</button> <button class="btn sm" data-act="downloadTestData" data-arg="${k}">Download .xlsx</button></td></tr>`).join('')}
     <tr><td><b>With deliberate errors</b></td><td class="small">Small dataset with duplicate PIN, missing posting block, unknown duty, missing office, short mobile, misspelt block, booth without block, unknown constituency, duplicate booth — to test validation.</td>
       <td class="nowrap"><button class="btn sm pri" data-act="loadTestData" data-arg="errors">Load into tool</button> <button class="btn sm" data-act="downloadTestData" data-arg="errors">Download .xlsx</button></td></tr>
@@ -174,6 +199,6 @@ function init() {
 window.__MLC = {
   get S() { return S; }, set S(v) { S = hydrate(v); invalidateIndexes(); },
   formPollingParties, formSingles, finalPolling, finalSingles, runAudit, generateTestState, generateErrorState,
-  buildProjectWorkbook, parseProjectWorkbook, validateOfficers, validateBooths, validateSetup, validateTraining, ACT, render,
+  buildProjectWorkbook, parseProjectWorkbook, formCountingParties, allotCountingTables, cntAudit, validateCntOfficers, validateCntSetup, validateOfficers, validateBooths, validateSetup, validateTraining, ACT, render,
 };
 init();

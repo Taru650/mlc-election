@@ -60,6 +60,25 @@ function defaultSetup() {
     icardTitle: '', icardSignLabel: 'Signature Of DEO',
   };
 }
+function defaultCountingSetup() {
+  return { tables: 0, reservePct: 10, hall: '', countDate: '', countTime: '', reportVenue: '', reportDate: '', reportTime: '', trainVenue: '', trainDate: '', trainTime: '' };
+}
+/** Counting personnel: separate officer list, parties (1 CS + 2 CA) and table allotment, with their own locks. */
+function defaultCounting() {
+  return { setup: defaultCountingSetup(), officers: [], parties: [], tables: {}, locks: { setup: false, officers: false, letter1: false, second: false, final: false }, ran: {} };
+}
+function hydrateCounting(c) {
+  const d = defaultCounting();
+  if (!c || typeof c !== 'object') return d;
+  d.setup = Object.assign(d.setup, c.setup || {});
+  d.officers = (c.officers || []).map(o => Object.assign(blankCntOfficer(), o));
+  d.parties = Array.isArray(c.parties) ? c.parties : [];
+  d.tables = c.tables && typeof c.tables === 'object' ? c.tables : {};
+  d.locks = Object.assign(d.locks, c.locks || {});
+  d.ran = c.ran || {};
+  return d;
+}
+function blankCntOfficer() { return { pin: '', name: '', designation: '', officeCode: '', office: '', officeAddress: '', mobile: '', duty: '', homeBlockCode: '', homeBlock: '', postingBlockCode: '', postingBlock: '', bloodGroup: '' }; }
 function defaultState() {
   return {
     app: 'MLC_POLLING_TOOL', version: 2, savedAt: null,
@@ -78,6 +97,7 @@ function defaultState() {
     locks: { setup: false, training: false, officers: false, letter1: false, booths: false, second: false, final: false },
     // 2nd and final randomisation are locked part by part, in any order
     parts: { second: { polling: false, pccp: false, micro: false }, final: { polling: false, pccp: false, micro: false } },
+    cnt: defaultCounting(),
     log: [],
   };
 }
@@ -193,7 +213,12 @@ function officerByPin(pin) {
   if (!_officerIndex) { _officerIndex = new Map(); S.officers.forEach(o => _officerIndex.set(String(o.pin), o)); }
   return _officerIndex.get(String(pin)) || null;
 }
-function invalidateIndexes() { _officerIndex = null; }
+let _cntIndex = null;
+function cntOfficerByPin(pin) {
+  if (!_cntIndex) { _cntIndex = new Map(); S.cnt.officers.forEach(o => _cntIndex.set(String(o.pin), o)); }
+  return _cntIndex.get(String(pin)) || null;
+}
+function invalidateIndexes() { _officerIndex = null; _cntIndex = null; }
 function boothById(id) { return S.booths.find(b => b.id === id) || null; }
 function constByCode(code) { return S.constituencies.find(c => c.code === code) || null; }
 function constName(code) { const c = constByCode(code); return c ? (c.name || c.code) : code; }
@@ -296,6 +321,7 @@ function hydrate(st) {
   out.log = out.log || [];
   out.exempt = (st && st.exempt && typeof st.exempt === 'object') ? st.exempt : {};
   out.constFix = (st && st.constFix && typeof st.constFix === 'object') ? st.constFix : {};
+  out.cnt = hydrateCounting(st && st.cnt);
   return out;
 }
 function addLog(action) { S.log.push({ time: nowStamp(), action }); if (S.log.length > 2000) S.log.shift(); }
@@ -344,6 +370,12 @@ const MODULES = [
   { id: 'exempt',   label: 'Exemptions',           grp: 'Letters & Randomisation' },
   { id: 'second',   label: '2nd Randomisation',    grp: 'Letters & Randomisation', lock: 'second' },
   { id: 'final',    label: 'Final Randomisation',  grp: 'Letters & Randomisation', lock: 'final' },
+  { id: 'cntSetup',    label: 'Counting Setup',          grp: 'Counting Personnel', lock: 'setup', cnt: true },
+  { id: 'cntOfficers', label: 'Counting Officers',       grp: 'Counting Personnel', lock: 'officers', cnt: true },
+  { id: 'cntLetter1',  label: '1st Letter (Counting)',   grp: 'Counting Personnel', lock: 'letter1', cnt: true },
+  { id: 'cntSecond',   label: '2nd Randomisation (Counting)', grp: 'Counting Personnel', lock: 'second', cnt: true },
+  { id: 'cntFinal',    label: 'Final — Table Allotment', grp: 'Counting Personnel', lock: 'final', cnt: true },
+  { id: 'cntOutputs',  label: 'Counting Letters, iCards & Attendance', grp: 'Counting Personnel' },
   { id: 'icards',   label: 'Identity Cards',       grp: 'Output' },
   { id: 'reports',  label: 'Reports & Letters',    grp: 'Output' },
   { id: 'data',     label: 'Save / Load / Test Data', grp: 'Output' },
@@ -354,7 +386,11 @@ function prereqs(id) {
   if (id === 'booths' && !L.setup) miss.push('Election Setup');
   if (id === 'letter1') { if (!L.officers) miss.push('Officers Database'); if (!L.training) miss.push('Training Schedule'); if (!L.setup) miss.push('Election Setup'); }
   if (id === 'exempt' && !L.officers) miss.push('Officers Database');
-  if (id === 'icards' && !PART_KINDS.some(k => S.parts.second[k])) miss.push('at least one part of the 2nd Randomisation');
+  if (id === 'icards' && !PART_KINDS.some(k => S.parts.second[k]) && !S.cnt.locks.second) miss.push('at least one part of the 2nd Randomisation (polling or counting)');
+  const CL = S.cnt.locks;
+  if (id === 'cntLetter1') { if (!CL.setup) miss.push('Counting Setup'); if (!CL.officers) miss.push('Counting Officers'); if (!L.setup) miss.push('Election Setup'); }
+  if (id === 'cntSecond') { if (!CL.setup) miss.push('Counting Setup'); if (!CL.officers) miss.push('Counting Officers'); }
+  if (id === 'cntFinal' && !CL.second) miss.push('2nd Randomisation (Counting)');
   if (id === 'second') { if (!L.setup) miss.push('Election Setup'); if (!L.officers) miss.push('Officers Database'); if (!L.booths) miss.push('Booth Entry'); }
   if (id === 'final') { if (!PART_KINDS.some(k => partApplicable(k) && S.parts.second[k])) miss.push('at least one part of the 2nd Randomisation'); }
   return miss;
