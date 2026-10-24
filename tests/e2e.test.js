@@ -829,7 +829,7 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   const c1 = await page.evaluate(() => {
     const S = __MLC.S; __MLC.ACT.cntLetters('first');
     const docs = [...document.querySelectorAll('#docBody .doc')], r = { n: docs.length, want: S.cnt.officers.length };
-    r.ok = docs.every((d, i) => d.innerText.includes(S.cnt.officers[i].pin) && d.innerText.includes(S.cnt.officers[i].duty) && /counting of votes/i.test(d.innerText) && d.innerText.includes(S.cnt.setup.trainVenue));
+    r.ok = docs.every((d, i) => d.innerText.includes(S.cnt.officers[i].pin) && d.innerText.includes(S.cnt.officers[i].duty) && /column 1 of the table below as duty mentioned in the corresponding entry in column 2/.test(d.innerText) && /to assist me in counting of Votes/.test(d.innerText) && d.innerText.includes('11:00 AM') && d.innerText.includes(S.cnt.setup.trainVenue));
     document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
     r.att = attendanceRows('cnt1').length;
     return r;
@@ -861,7 +861,7 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
     const S = __MLC.S, r = { locked: S.cnt.locks.second, n: S.cnt.parties.length };
     __MLC.ACT.cntLetters('second');
     let docs = [...document.querySelectorAll('#docBody .doc')]; r.letters = docs.length;
-    r.later = docs.every(d => d.innerText.includes('Will be informed later') && !/RESERVE/.test(d.innerText) && d.innerText.includes(S.cnt.setup.hall) && d.innerText.includes('06:30'));
+    r.later = docs.every(d => d.innerText.includes('Will be informed later') && !/RESERVE/.test(d.innerText) && d.innerText.includes(S.cnt.setup.hall) && d.innerText.includes('06:30 AM') && d.innerText.includes('08:00 AM') && /In pursuance of sub-section \(1\) and sub-section \(3\) of section 26/.test(d.innerText) && d.innerText.includes(S.setup.roCumDeo) && /to assist me in counting of Votes/.test(d.innerText));
     document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
     __MLC.ACT.cntLetters('second3'); docs = [...document.querySelectorAll('#docBody .doc')]; r.copies = docs.length;
     r.ticks = docs.every((d, i) => { const role = ['CS', 'CA1', 'CA2'][i % 3], row = [...d.querySelectorAll('table.lt tr')].find(tr => tr.querySelector('.tick')); return d.querySelectorAll('.tick').length === 2 && row && row.innerText.includes(cntOfficerByPin(S.cnt.parties.slice().sort(byPartyNo)[Math.floor(i / 3)][role]).name); });

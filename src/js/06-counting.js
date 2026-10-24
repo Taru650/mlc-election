@@ -412,11 +412,16 @@ ACT.cntUnlock = mod => {
 
 /* ---------------- letters ---------------- */
 function cntHead(title) { return `<div class="ttl">${esc(title)}</div><div class="ttl2">${esc(T().electionTitle)}</div><div class="c b" style="font-size:12.5px;margin-bottom:6px">COUNTING OF VOTES</div>`; }
-const cntAt = (d, t) => [d ? esc(fmtDate(d)) : '', t ? 'at ' + esc(t) : ''].filter(Boolean).join(' ');
+/** "06:00" → "06:00 AM", "14:30" → "02:30 PM" (counting letters print 12-hour times). */
+function fmtTime12(t) {
+  const m = str(t).match(/^(\d{1,2}):(\d{2})/); if (!m) return str(t);
+  const h = Number(m[1]); return `${pad(h % 12 || 12)}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
+}
+const cntAt = (d, t) => [d ? esc(fmtDate(d)) : '', t ? 'at ' + esc(fmtTime12(t)) : ''].filter(Boolean).join(' ');
 /** Counting hall / table / date / time / reporting box. */
 function cntDetails(tableHtml) {
   const st = C().setup;
-  const rows = [['Counting hall', esc(st.hall)], ['Table No.', tableHtml], ['Date of counting', esc(fmtDate(st.countDate))], ['Counting starts at', esc(st.countTime)],
+  const rows = [['Counting hall', esc(st.hall)], ['Table No.', tableHtml], ['Date of counting', esc(fmtDate(st.countDate))], ['Counting starts at', esc(st.countTime && fmtTime12(st.countTime))],
     ['Reporting place', esc(st.reportVenue)], ['Reporting date &amp; time', cntAt(st.reportDate, st.reportTime)]].filter(([k, v]) => v || k === 'Table No.');
   return `<table class="lt"><colgroup><col style="width:30%"><col></colgroup>${rows.map(([k, v]) => `<tr><td><b>${k}</b></td><td>${k === 'Table No.' ? v : `<b>${v}</b>`}</td></tr>`).join('')}</table>`;
 }
@@ -424,23 +429,26 @@ function cntCopyLine(forRole) { return forRole ? `<div class="copyfor">Copy ${CN
 function cntFirstLetterHtml(o) {
   const st = C().setup, train = st.trainDate || st.trainVenue || st.trainTime;
   return `<div class="doc">${cntHead('Order of First Appointment Letter — Counting Personnel')}
-    ${rpaParaCnt(`hereby appoint the officer specified in column 1 of the table below as <b>${esc(postName(o.duty))}</b> for the counting of votes of the ${esc(T().electionTitle)}.`)}
+    ${rpaParaCnt('hereby appoint the following officer specified in the column 1 of the table below as duty mentioned in the corresponding entry in column 2 of the table below')}
     <table class="lt"><tr><th style="width:62%">Column 1 — Employee Details</th><th>Column 2 — Duty</th></tr>
     <tr><td>${officerDetails(o, false)}</td><td style="vertical-align:middle"><b>Duty :- ${esc(o.duty)}</b></td></tr></table>
-    ${train ? `<div class="b" style="font-size:13px">Training Details :-</div><table class="lt cen"><tr><th>Date</th><th>Venue</th><th>Time</th></tr><tr><td>${esc(fmtDate(st.trainDate)) || '—'}</td><td>${esc(st.trainVenue) || '—'}</td><td>${esc(st.trainTime) || '—'}</td></tr></table>` : ''}
+    ${train ? `<div class="b" style="font-size:13px">Training Details :-</div><table class="lt cen"><tr><th>Date</th><th>Venue</th><th>Time</th></tr><tr><td>${esc(fmtDate(st.trainDate)) || '—'}</td><td>${esc(st.trainVenue) || '—'}</td><td>${esc(st.trainTime && fmtTime12(st.trainTime)) || '—'}</td></tr></table>` : ''}
     <div class="note"><b>IMPORTANT:</b><br>${train ? '• Participation in the training is compulsory.<br>' : ''}• Verify your mobile number in this letter. In case of any discrepancy, correct it on the receipt and return it to the Personnel Cell.<br>• Your counting party and table will be notified later through the 2nd and final appointment letters.<br>• Failure will invite action under the relevant provisions of the Representation of the People Act, 1951.</div>
     ${sigBlock()}
     ${receipt('First Appointment Letter (Counting) — Receipt', [`Name :- <b>${esc(o.name)}</b><br>Designation :- ${esc(o.designation)}`, `PIN :- <b>${esc(o.pin)}</b><br>Contact :- ${esc(o.mobile)}`, `Duty :- <b>${esc(o.duty)}</b>`])}
   </div>`;
 }
-function rpaParaCnt(what) { return `<p>I, <b>${esc(T().roCumDeo)}</b>, ${what}</p>`; }
+/** Appointment paragraph of every counting letter (format supplied by the district). */
+function rpaParaCnt(what) {
+  return `<p>In pursuance of sub-section (1) and sub-section (3) of section 26 of the Representation of the People Act, 1951 (43 of 1951) I, <b>${esc(T().roCumDeo)}</b>, ${what} for conducting of the ${esc(T().electionTitle)}, to assist me in counting of Votes.</p>`;
+}
 function cntPartyLetterHtml(p, stage, forRole) {
   const t = cntTableOf(p.partyNo);
   const tableHtml = stage === 'second' ? '<i>Will be informed later</i>' : t ? `<b style="font-size:15px">${t}</b>` : '<b style="font-size:15px">RESERVE</b>';
   const rows = CNT_ROLES.map(r => { const o = cntOfficerByPin(p[r]) || {}; return `<tr><td class="nowrap"><b>${esc(CNT_ROLE_NAME[r])}</b></td><td>${tick(r, forRole)}${esc(o.name)}</td><td>${esc(o.pin)}</td><td>${esc([o.designation, o.office].map(str).filter(Boolean).join(', '))}</td><td>${esc(o.mobile)}</td></tr>`; }).join('');
   return `<div class="doc">${cntHead(`Order of ${stage === 'second' ? 'Second' : 'Final'} Appointment Letter — Counting Party`)}
     <div class="hdr2"><span>ELECTION URGENT</span><span>COUNTING PARTY NO :- ${esc(p.partyNo)}</span></div>${cntCopyLine(forRole)}
-    ${rpaParaCnt(`hereby appoint the following officers as a counting party for the counting of votes of the ${esc(T().electionTitle)}.`)}
+    ${rpaParaCnt('hereby appoint the following officers specified in the table below as duty mentioned in the corresponding entry in column “Duty” of the table below')}
     <table class="lt"><tr><th>Duty</th><th>Name</th><th>PIN</th><th>Designation &amp; Office</th><th>Contact</th></tr>${rows}</table>
     ${cntDetails(tableHtml)}
     <div class="note"><b>IMPORTANT:</b><br>${numbered([C().setup.reportVenue && `The counting party shall report at <b>${esc(C().setup.reportVenue)}</b>${C().setup.reportDate || C().setup.reportTime ? ' on ' + `<b>${cntAt(C().setup.reportDate, C().setup.reportTime)}</b>` : ''}.`, stage === 'second' ? 'The counting table will be informed later through the Final Appointment Letter.' : '', 'Carry this letter and your identity card to the counting hall.'])}</div>
