@@ -411,7 +411,7 @@ ACT.cntUnlock = mod => {
 };
 
 /* ---------------- letters ---------------- */
-function cntHead(title) { return `<div class="ttl">${esc(title)}</div><div class="ttl2">${esc(T().electionTitle)}</div><div class="c b" style="font-size:12.5px;margin-bottom:6px">COUNTING OF VOTES</div>`; }
+function cntHead(title) { return `<div class="ttl">${esc(title)}</div><div class="ttl2" style="margin-bottom:6px">${esc(T().electionTitle)}</div>`; }
 /** "06:00" → "06:00 AM", "14:30" → "02:30 PM" (counting letters print 12-hour times). */
 function fmtTime12(t) {
   const m = str(t).match(/^(\d{1,2}):(\d{2})/); if (!m) return str(t);
