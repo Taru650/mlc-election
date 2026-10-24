@@ -188,7 +188,7 @@ table.t td input,table.t td select{padding:4px 6px;font-size:.82rem}
 .doc.cntl .cl-head{text-align:center;border-bottom:3px double #000;padding-bottom:calc(10px*var(--k));margin-bottom:calc(14px*var(--k))}
 .doc.cntl .cl-head .ttl{font-size:calc(19px*var(--k));text-decoration:underline;margin-bottom:6px;letter-spacing:.3px}
 .doc.cntl .cl-head .ttl2{font-size:calc(16px*var(--k));margin:0}
-.doc.cntl .copyfor{font-size:12.5px;margin:-8px 0 8px}
+.doc.cntl .copyfor{font-size:12.5px;margin:-6px 0 8px}
 .doc.cntl p.cl-para{font-size:calc(15.5px*var(--k));line-height:1.65;text-indent:48px;margin:0 0 calc(16px*var(--k))}
 .doc.cntl table.lt{margin:0 0 calc(18px*var(--k))}
 .doc.cntl table.lt th,.doc.cntl table.lt td{font-size:calc(14.5px*var(--k));padding:calc(7px*var(--k)) 10px;vertical-align:middle;line-height:1.35}

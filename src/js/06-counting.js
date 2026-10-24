@@ -446,8 +446,8 @@ function cntPartyLetterHtml(p, stage, forRole) {
   const t = cntTableOf(p.partyNo);
   const tableHtml = stage === 'second' ? '<i>Will be informed later</i>' : t ? `<b class="cl-table">${t}</b>` : '<b class="cl-table">RESERVE</b>';
   const rows = CNT_ROLES.map(r => { const o = cntOfficerByPin(p[r]) || {}; return `<tr><td class="nowrap"><b>${esc(CNT_ROLE_NAME[r])}</b></td><td>${tick(r, forRole)}${esc(o.name)}</td><td>${esc(o.pin)}</td><td>${esc([o.designation, o.office].map(str).filter(Boolean).join(', '))}</td><td>${esc(o.mobile)}</td></tr>`; }).join('');
-  return `<div class="doc cntl"><div class="cl-top"><span class="cl-urgent">ELECTION URGENT</span><span class="cl-party">COUNTING PARTY NO :- ${esc(p.partyNo)}</span></div>
-    ${cntHead(`Order of ${stage === 'second' ? 'Second' : 'Final'} Appointment Letter — Counting Party`)}${cntCopyLine(forRole)}
+  return `<div class="doc cntl">${cntHead(`Order of ${stage === 'second' ? 'Second' : 'Final'} Appointment Letter — Counting Party`)}
+    <div class="cl-top"><span class="cl-urgent">ELECTION URGENT</span><span class="cl-party">COUNTING PARTY NO :- ${esc(p.partyNo)}</span></div>${cntCopyLine(forRole)}
     ${rpaParaCnt('hereby appoint the following officers specified in the table below as duty mentioned in the corresponding entry in column “Duty” of the table below')}
     <table class="lt cl-mem"><colgroup><col style="width:22%"><col style="width:20%"><col style="width:10%"><col style="width:34%"><col style="width:14%"></colgroup><tr><th>Duty</th><th>Name</th><th>PIN</th><th>Designation &amp; Office</th><th>Contact</th></tr>${rows}</table>
     ${cntDetails(tableHtml)}
