@@ -928,6 +928,22 @@ const ok = (cond, msg) => { if (cond) console.log('  ✔ ' + msg); else { failur
   await page.evaluate(() => { document.querySelector('#printArea').innerHTML = ''; });
   const cPages = (cPdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
   ok(cPages === 7, `7 final counting letters print on ${cPages} A4 pages (one each)`);
+  const cl = await page.evaluate(() => {
+    const S = __MLC.S, keep = JSON.parse(JSON.stringify({ cnt: S.cnt, ro: S.setup.roCumDeo }));
+    S.setup.roCumDeo = 'Sri Amit Kumar Srivastava, I.A.S., Returning Officer 22-Madhubani-cum-District Magistrate-cum-District Election Officer, Madhubani';
+    S.cnt.setup.hall = 'Rajkiya Girls Higher Secondary School, Main Building Ground Floor Hall No. 2, Station Road, Chapra';
+    S.cnt.officers.forEach(o => { o.name += ' KUMAR PRASAD SRIVASTAVA'; o.office = 'Office of the Executive Engineer, Rural Works Department, Works Division No. 2, ' + o.office; o.designation = 'Assistant Engineer (Civil) cum Executive Officer'; }); invalidateIndexes();
+    const r = {};
+    for (const k of ['first', 'second', 'final']) {
+      __MLC.ACT.cntLetters(k);
+      const docs = [...document.querySelectorAll('#docBody .doc.cntl')];
+      r[k] = docs.filter(el => { const st = el.getAttribute('style') || ''; el.style.cssText = st + ';width:190mm;max-width:none;padding:0 4mm;border:0;min-height:0;margin:0'; const h = el.scrollHeight; el.setAttribute('style', st); return h > 274 * 96 / 25.4; }).length + '/' + docs.length;
+      document.querySelectorAll('#modalRoot .overlay').forEach(o => o.remove());
+    }
+    S.cnt = keep.cnt; S.setup.roCumDeo = keep.ro; invalidateIndexes();
+    return r;
+  });
+  ok([cl.first, cl.second, cl.final].every(x => x.startsWith('0/')), `very long names / offices / hall: no counting letter taller than one A4 page (overflowing: 1st ${cl.first}, 2nd ${cl.second}, final ${cl.final})`);
   const cx = await page.evaluate(() => {
     const S = __MLC.S, st = __MLC.parseProjectWorkbook(XLSX.read(XLSX.write(__MLC.buildProjectWorkbook(), { type: 'array', bookType: 'xlsx' }), { type: 'array' }));
     const r = {

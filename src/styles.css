@@ -180,6 +180,28 @@ table.t td input,table.t td select{padding:4px 6px;font-size:.82rem}
 .doc.commplan .cp-sub{font-size:12px;margin:2px 0 3px}
 .doc.commplan table.lt{margin:0 0 4px}
 .doc.commplan table.lt td,.doc.commplan table.lt th{padding:2px 6px;font-size:12.5px}
+/* counting letters — full-page official layout; --k < 1 only when long data would overflow the page */
+.doc.cntl{--k:1;display:flex;flex-direction:column;min-height:1060px;box-sizing:border-box;font-size:calc(15px*var(--k));line-height:1.55}
+.doc.cntl .cl-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:calc(14px*var(--k))}
+.doc.cntl .cl-urgent{border:1.5px solid #000;padding:3px 12px;font-weight:700;letter-spacing:.6px;font-size:calc(14.5px*var(--k))}
+.doc.cntl .cl-party{border:1.5px solid #000;padding:3px 12px;font-weight:700;font-size:calc(15px*var(--k))}
+.doc.cntl .cl-head{text-align:center;border-bottom:3px double #000;padding-bottom:calc(10px*var(--k));margin-bottom:calc(14px*var(--k))}
+.doc.cntl .cl-head .ttl{font-size:calc(19px*var(--k));text-decoration:underline;margin-bottom:6px;letter-spacing:.3px}
+.doc.cntl .cl-head .ttl2{font-size:calc(16px*var(--k));margin:0}
+.doc.cntl .copyfor{font-size:12.5px;margin:-8px 0 8px}
+.doc.cntl p.cl-para{font-size:calc(15.5px*var(--k));line-height:1.65;text-indent:48px;margin:0 0 calc(16px*var(--k))}
+.doc.cntl table.lt{margin:0 0 calc(18px*var(--k))}
+.doc.cntl table.lt th,.doc.cntl table.lt td{font-size:calc(14.5px*var(--k));padding:calc(7px*var(--k)) 10px;vertical-align:middle;line-height:1.35}
+.doc.cntl table.cl-det td{padding:calc(8px*var(--k)) 12px}
+.doc.cntl table.cl-det td:first-child{background:#f2f2f2}
+.doc.cntl .cl-table{font-size:calc(17px*var(--k));letter-spacing:.5px}
+.doc.cntl .cl-sub{font-size:calc(15px*var(--k));margin:0 0 6px}
+.doc.cntl .cl-note{font-size:calc(14.5px*var(--k));line-height:1.7}
+.doc.cntl .cl-imp{text-decoration:underline;font-size:calc(15px*var(--k))}
+.doc.cntl .cl-foot{margin-top:auto;padding-top:calc(14px*var(--k))}
+.doc.cntl .sigs{font-size:calc(14.5px*var(--k));margin-top:0}
+.doc.cntl .sigimg{max-height:calc(68px*var(--k))}
+.doc.cntl .rcpt{font-size:calc(13px*var(--k));margin-top:calc(22px*var(--k))}
 .doc.rsv{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif;font-size:14.5px;line-height:1.38}
 .doc.rsv .rsv-urgent{text-align:center;font-weight:700;font-style:italic;text-decoration:underline;font-size:16px;margin-bottom:4px}
 .doc.rsv .rsv-title{text-align:center;font-weight:700;font-size:16px;margin-bottom:2px}
@@ -262,5 +284,6 @@ table.t td input,table.t td select{padding:4px 6px;font-size:.82rem}
   #printArea .doc.land{page:land}
   #printArea .chooser{display:none}
   .doc table.lt tr{page-break-inside:avoid}
+  #printArea .doc.cntl{min-height:274mm}
   #printArea .doc:not(.land):not(.reg){break-inside:avoid;page-break-inside:avoid}
 }

@@ -411,7 +411,7 @@ ACT.cntUnlock = mod => {
 };
 
 /* ---------------- letters ---------------- */
-function cntHead(title) { return `<div class="ttl">${esc(title)}</div><div class="ttl2" style="margin-bottom:6px">${esc(T().electionTitle)}</div>`; }
+function cntHead(title) { return `<div class="cl-head"><div class="ttl">${esc(title)}</div><div class="ttl2">${esc(T().electionTitle)}</div></div>`; }
 /** "06:00" → "06:00 AM", "14:30" → "02:30 PM" (counting letters print 12-hour times). */
 function fmtTime12(t) {
   const m = str(t).match(/^(\d{1,2}):(\d{2})/); if (!m) return str(t);
@@ -423,50 +423,65 @@ function cntDetails(tableHtml) {
   const st = C().setup;
   const rows = [['Counting hall', esc(st.hall)], ['Table No.', tableHtml], ['Date of counting', esc(fmtDate(st.countDate))], ['Counting starts at', esc(st.countTime && fmtTime12(st.countTime))],
     ['Reporting place', esc(st.reportVenue)], ['Reporting date &amp; time', cntAt(st.reportDate, st.reportTime)]].filter(([k, v]) => v || k === 'Table No.');
-  return `<table class="lt"><colgroup><col style="width:30%"><col></colgroup>${rows.map(([k, v]) => `<tr><td><b>${k}</b></td><td>${k === 'Table No.' ? v : `<b>${v}</b>`}</td></tr>`).join('')}</table>`;
+  return `<table class="lt cl-det"><colgroup><col style="width:32%"><col></colgroup>${rows.map(([k, v]) => `<tr><td><b>${k}</b></td><td>${k === 'Table No.' ? v : `<b>${v}</b>`}</td></tr>`).join('')}</table>`;
 }
 function cntCopyLine(forRole) { return forRole ? `<div class="copyfor">Copy ${CNT_ROLES.indexOf(forRole) + 1} of 3 — for ${esc(CNT_ROLE_NAME[forRole])} <span class="tick">✔</span></div>` : ''; }
 function cntFirstLetterHtml(o) {
   const st = C().setup, train = st.trainDate || st.trainVenue || st.trainTime;
-  return `<div class="doc">${cntHead('Order of First Appointment Letter — Counting Personnel')}
+  return `<div class="doc cntl">${cntHead('Order of First Appointment Letter — Counting Personnel')}
     ${rpaParaCnt('hereby appoint the following officer specified in the column 1 of the table below as duty mentioned in the corresponding entry in column 2 of the table below')}
-    <table class="lt"><tr><th style="width:62%">Column 1 — Employee Details</th><th>Column 2 — Duty</th></tr>
+    <table class="lt cl-mem"><tr><th style="width:62%">Column 1 — Employee Details</th><th>Column 2 — Duty</th></tr>
     <tr><td>${officerDetails(o, false)}</td><td style="vertical-align:middle"><b>Duty :- ${esc(o.duty)}</b></td></tr></table>
-    ${train ? `<div class="b" style="font-size:13px">Training Details :-</div><table class="lt cen"><tr><th>Date</th><th>Venue</th><th>Time</th></tr><tr><td>${esc(fmtDate(st.trainDate)) || '—'}</td><td>${esc(st.trainVenue) || '—'}</td><td>${esc(st.trainTime && fmtTime12(st.trainTime)) || '—'}</td></tr></table>` : ''}
-    <div class="note"><b>IMPORTANT:</b><br>${train ? '• Participation in the training is compulsory.<br>' : ''}• Verify your mobile number in this letter. In case of any discrepancy, correct it on the receipt and return it to the Personnel Cell.<br>• Your counting party and table will be notified later through the 2nd and final appointment letters.<br>• Failure will invite action under the relevant provisions of the Representation of the People Act, 1951.</div>
-    ${sigBlock()}
-    ${receipt('First Appointment Letter (Counting) — Receipt', [`Name :- <b>${esc(o.name)}</b><br>Designation :- ${esc(o.designation)}`, `PIN :- <b>${esc(o.pin)}</b><br>Contact :- ${esc(o.mobile)}`, `Duty :- <b>${esc(o.duty)}</b>`])}
+    ${train ? `<div class="b cl-sub">Training Details :-</div><table class="lt cen cl-mem"><tr><th>Date</th><th>Venue</th><th>Time</th></tr><tr><td>${esc(fmtDate(st.trainDate)) || '—'}</td><td>${esc(st.trainVenue) || '—'}</td><td>${esc(st.trainTime && fmtTime12(st.trainTime)) || '—'}</td></tr></table>` : ''}
+    <div class="note cl-note"><b class="cl-imp">IMPORTANT:</b><br>${train ? '• Participation in the training is compulsory.<br>' : ''}• Verify your mobile number in this letter. In case of any discrepancy, correct it on the receipt and return it to the Personnel Cell.<br>• Your counting party and table will be notified later through the 2nd and final appointment letters.<br>• Failure will invite action under the relevant provisions of the Representation of the People Act, 1951.</div>
+    <div class="cl-foot">${sigBlock()}
+    ${receipt('First Appointment Letter (Counting) — Receipt', [`Name :- <b>${esc(o.name)}</b><br>Designation :- ${esc(o.designation)}`, `PIN :- <b>${esc(o.pin)}</b><br>Contact :- ${esc(o.mobile)}`, `Duty :- <b>${esc(o.duty)}</b>`])}</div>
   </div>`;
 }
 /** Appointment paragraph of every counting letter (format supplied by the district). */
 function rpaParaCnt(what) {
-  return `<p>In pursuance of sub-section (1) and sub-section (3) of section 26 of the Representation of the People Act, 1951 (43 of 1951) I, <b>${esc(T().roCumDeo)}</b>, ${what} for conducting of the ${esc(T().electionTitle)}, to assist me in counting of Votes.</p>`;
+  return `<p class="cl-para">In pursuance of sub-section (1) and sub-section (3) of section 26 of the Representation of the People Act, 1951 (43 of 1951) I, <b>${esc(T().roCumDeo)}</b>, ${what} for conducting of the ${esc(T().electionTitle)}, to assist me in counting of Votes.</p>`;
 }
 function cntPartyLetterHtml(p, stage, forRole) {
   const t = cntTableOf(p.partyNo);
-  const tableHtml = stage === 'second' ? '<i>Will be informed later</i>' : t ? `<b style="font-size:15px">${t}</b>` : '<b style="font-size:15px">RESERVE</b>';
+  const tableHtml = stage === 'second' ? '<i>Will be informed later</i>' : t ? `<b class="cl-table">${t}</b>` : '<b class="cl-table">RESERVE</b>';
   const rows = CNT_ROLES.map(r => { const o = cntOfficerByPin(p[r]) || {}; return `<tr><td class="nowrap"><b>${esc(CNT_ROLE_NAME[r])}</b></td><td>${tick(r, forRole)}${esc(o.name)}</td><td>${esc(o.pin)}</td><td>${esc([o.designation, o.office].map(str).filter(Boolean).join(', '))}</td><td>${esc(o.mobile)}</td></tr>`; }).join('');
-  return `<div class="doc">${cntHead(`Order of ${stage === 'second' ? 'Second' : 'Final'} Appointment Letter — Counting Party`)}
-    <div class="hdr2"><span>ELECTION URGENT</span><span>COUNTING PARTY NO :- ${esc(p.partyNo)}</span></div>${cntCopyLine(forRole)}
+  return `<div class="doc cntl"><div class="cl-top"><span class="cl-urgent">ELECTION URGENT</span><span class="cl-party">COUNTING PARTY NO :- ${esc(p.partyNo)}</span></div>
+    ${cntHead(`Order of ${stage === 'second' ? 'Second' : 'Final'} Appointment Letter — Counting Party`)}${cntCopyLine(forRole)}
     ${rpaParaCnt('hereby appoint the following officers specified in the table below as duty mentioned in the corresponding entry in column “Duty” of the table below')}
-    <table class="lt"><tr><th>Duty</th><th>Name</th><th>PIN</th><th>Designation &amp; Office</th><th>Contact</th></tr>${rows}</table>
+    <table class="lt cl-mem"><colgroup><col style="width:22%"><col style="width:20%"><col style="width:10%"><col style="width:34%"><col style="width:14%"></colgroup><tr><th>Duty</th><th>Name</th><th>PIN</th><th>Designation &amp; Office</th><th>Contact</th></tr>${rows}</table>
     ${cntDetails(tableHtml)}
-    <div class="note"><b>IMPORTANT:</b><br>${numbered([C().setup.reportVenue && `The counting party shall report at <b>${esc(C().setup.reportVenue)}</b>${C().setup.reportDate || C().setup.reportTime ? ' on ' + `<b>${cntAt(C().setup.reportDate, C().setup.reportTime)}</b>` : ''}.`, stage === 'second' ? 'The counting table will be informed later through the Final Appointment Letter.' : '', 'Carry this letter and your identity card to the counting hall.'])}</div>
-    ${sigBlock()}
+    <div class="note cl-note"><b class="cl-imp">IMPORTANT:</b><br>${numbered([C().setup.reportVenue && `The counting party shall report at <b>${esc(C().setup.reportVenue)}</b>${C().setup.reportDate || C().setup.reportTime ? ' on ' + `<b>${cntAt(C().setup.reportDate, C().setup.reportTime)}</b>` : ''}.`, stage === 'second' ? 'The counting table will be informed later through the Final Appointment Letter.' : '', 'Carry this letter and your identity card to the counting hall.'])}</div>
+    <div class="cl-foot">${sigBlock()}</div>
   </div>`;
+}
+/** Shrinks a counting letter (via --k) only when its content would not fit one printed A4 page
+ *  (measured at the print width: 190 mm with 4 mm side padding, 274 mm usable height). */
+function fitCntLetters(root) {
+  const limit = 272 * 96 / 25.4;
+  $$('.doc.cntl', root).forEach(el => {
+    const keep = el.getAttribute('style') || '';
+    el.style.cssText = keep + ';width:190mm;max-width:none;padding:0 4mm;border:0;min-height:0;margin:0';
+    let k = 1;
+    while (el.scrollHeight > limit && k > 0.72) { k = +(k - 0.03).toFixed(2); el.style.setProperty('--k', k); }
+    el.setAttribute('style', keep);
+    if (k < 1) el.style.setProperty('--k', k);
+  });
 }
 ACT.cntLetters = arg => {
   const [what, duty] = String(arg).split(':');
   if (what === 'first') {
     if (prereqs('cntLetter1').length) return toast('Prerequisite pending: ' + prereqs('cntLetter1').join(', '), 'bad');
     const list = C().officers.filter(o => !duty || o.duty === CNT_DUTY[duty].label);
-    return openDoc(`Counting — 1st Appointment Letters${duty ? ' — ' + CNT_DUTY[duty].label : ''} (${list.length})`, list.map(cntFirstLetterHtml).join(''));
+    openDoc(`Counting — 1st Appointment Letters${duty ? ' — ' + CNT_DUTY[duty].label : ''} (${list.length})`, list.map(cntFirstLetterHtml).join(''));
+    return fitCntLetters($('#docBody'));
   }
   const stage = what.startsWith('second') ? 'second' : 'final', three = what.endsWith('3');
   if (!C().locks[stage]) return toast(`Lock the counting ${stage === 'second' ? '2nd' : 'final'} randomisation first.`, 'bad');
   const list = stage === 'final' ? cntMainParties().concat(cntReserveParties()) : cntPartiesSorted();
   const html = list.map(p => three ? CNT_ROLES.map(r => cntPartyLetterHtml(p, stage, r)).join('') : cntPartyLetterHtml(p, stage)).join('');
   openDoc(`Counting — ${stage === 'second' ? '2nd' : 'Final'} Appointment Letters${three ? ' — 3 copies ✔ CS / CA-1 / CA-2' : ' (office copy)'} (${list.length * (three ? 3 : 1)})`, html);
+  fitCntLetters($('#docBody'));
 };
 
 /* ---------------- identity cards ---------------- */
